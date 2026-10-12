@@ -2,8 +2,8 @@
 
 Estado a 13-10-2026: funciona en Docker y está probado con un modelo real contra
 la demo (20 listados, 4.175 reservas, 3.514 clientes). Las herramientas y el bucle
-del agente tienen tests. La Fase 3 ha empezado: `anular_reserva` ya se ejecuta en
-la DEMO; falta afinar el prompt con la batería de preguntas.
+del agente tienen tests. La Fase 3 avanza: anular reservas y dar de alta clientes,
+lugares y reservas exprés ya se ejecuta en la DEMO; falta afinar el prompt con la batería de preguntas.
 
 ## Fases
 
@@ -12,7 +12,7 @@ la DEMO; falta afinar el prompt con la batería de preguntas.
 | 0 | Proyecto, usuarios por rentacar, conector Webcar → DuckDB, SQL seguro | Hecho |
 | 1 | Asistente de ayuda (buscar_ayuda sobre `conocimiento/`) | Hecho v1 (búsqueda por palabras) |
 | 2 | Consultas sobre datos (describir_tablas + consultar_datos) | Hecho v1, falta afinar con el modelo |
-| 3 | Acciones con confirmación | En curso: `anular_reserva` se ejecuta en la DEMO automatizando el formulario de Webcar (docs/Escritura.md); el resto, pendiente |
+| 3 | Acciones con confirmación | En curso: `anular_reserva`, `crear_cliente`, `crear_lugar` y `crear_reserva` (exprés) se ejecutan en la DEMO automatizando los formularios de Webcar (docs/Escritura.md); el resto, pendiente |
 | 4 | Producción: despliegue, límites, métricas | Pendiente |
 
 ### Fase 1 – Ayuda
@@ -40,8 +40,15 @@ de Webcar con la sesión de un usuario, detrás de tres interruptores del `.env`
 - [x] `webcar/escritura.py`: login, lectura de formularios (`segur` fresco) y envío; `puede_escribir`.
 - [x] `anular_reserva` de punta a punta en la DEMO (13-10-2026, reserva 004292): desde el chat,
       con confirmación, comprobando en Webcar que queda inactiva y que no cambia nada más.
-- [ ] Siguiente acción (una cada vez, con su prueba de humo): `registrar_cobro` o `asignar_matricula`,
-      que usan el mismo editor `APP21`; después `crear_reserva` e `inmovilizar_vehiculo` (`APP1`).
+- [x] `crear_cliente`, `crear_lugar` y `crear_reserva` (exprés, solo para clientes que ya existen), probadas
+      desde el chat en la DEMO el 13-10-2026 (cliente 03528, lugar L-07, reserva 004294). Con validación de
+      `maxlength` y de los valores de los desplegables antes de enviar.
+- [ ] Siguiente acción (una cada vez, con su prueba de humo): `editar_reserva` (completar una exprés: horas,
+      lugares, vehículo, precio), `registrar_cobro` o `asignar_matricula`, que usan el editor `APP21`;
+      después `inmovilizar_vehiculo` (`APP1`).
+- [ ] Decidir si el alta de cliente exige los campos que Webcar marca con `*` (hoy solo nombre y NIF).
+- [ ] Registros de prueba que quedan en la DEMO: clientes 03527 y 03528, lugares 06 y 07, reservas 004293
+      y 004294 (activas). La acción `crear_reserva` de la 004293 figura «fallida» aunque Webcar la creó.
 - [ ] El motivo de la anulación solo queda en `AccionPropuesta`; decidir si se anota también en Webcar (`histori`).
 - [ ] El `codi` de los CSV falla un par de minutos tras la medianoche: el reloj de Webcar va algo
       atrasado y el listado llega vacío. Reintentar con el `codi` del día anterior.
@@ -73,8 +80,8 @@ Camino 1 (API de COR SOFT), que sigue siendo lo deseable:
 3. **Credenciales de Webcar para escribir** (`Rentacar.oper_webcar` / `password_webcar`):
    - TODO antes de cualquier rentacar real: **cifrar la contraseña** (p. ej. `cryptography.Fernet`
      con la clave en `.env`). Hoy se guarda en claro y solo está puesta la de la DEMO.
-   - El token de sesión `c` que devuelve el login equivale a la contraseña: se ha visto el mismo
-     valor en sesiones distintas y con él solo ya se lee y se escribe. No se registra en logs ni en
+   - El token de sesión `c` que devuelve el login equivale a la contraseña: se deriva de ella, es el
+     mismo en todas las sesiones de un día (cambia de un día a otro) y con él solo ya se lee y se escribe. No se registra en logs ni en
      mensajes de error, pero viaja en la URL al leer páginas (así navega Webcar). Pedir a COR SOFT
      un token de sesión de verdad, igual que para el `codi`.
    - La escritura se hace con UN usuario de Webcar por rentacar: en Webcar todo queda a su nombre,

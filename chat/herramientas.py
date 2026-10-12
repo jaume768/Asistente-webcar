@@ -178,7 +178,8 @@ DEFINICIONES = [
             "name": "proponer_accion",
             "description": (
                 "Propone un cambio en Webcar. NO lo ejecuta: crea una tarjeta que el usuario confirma. "
-                "Comprueba antes con consultar_datos que los códigos existen. Tipos: "
+                "Comprueba antes con consultar_datos que los códigos existen. Pasa solo los datos que ha dado "
+                "el usuario: no rellenes por tu cuenta los parámetros opcionales. Tipos: "
                 + "; ".join(f"{t.clave}: {t.descripcion} Parámetros: {json.dumps(t.esquema['properties'], ensure_ascii=False)}"
                             for t in acciones.TIPOS.values())
             ),

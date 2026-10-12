@@ -164,6 +164,55 @@ class AccionesTests(Base):
             self.assertEqual(a.estado, AccionPropuesta.Estado.FALLIDA)
             self.assertIn("sigue activa", a.resultado)
 
+    def test_altas_confirmadas_caducan_su_listado(self):
+        self.r.oper_webcar, self.r.password_webcar = "046", "secreta"
+        self.r.save()
+        casos = [
+            ("crear_cliente", {"nombre": "Ana Peña", "nif": "X1"}, "clientes", "Cliente 03528 creado."),
+            ("crear_reserva", {"categoria": "C-01", "cliente": "03520", "fecha_entrega": "2026-10-20", "dias": "2"},
+             "reservas", "Reserva 004294 creada."),
+        ]
+        abierto = {**self.ESCRITURA_ABIERTA, "WEBCAR_ESCRITURA_ACCIONES": ["crear_cliente", "crear_reserva", "crear_lugar"]}
+        with self.settings(**abierto):
+            for tipo, params, listado, texto in casos:
+                with mock.patch.object(escritura, tipo, return_value=texto) as ejecutor:
+                    a = acciones.resolver(acciones.proponer(self.c, self.u, tipo, params), self.u, confirmar=True)
+                self.assertEqual((a.estado, a.resultado), (AccionPropuesta.Estado.CONFIRMADA, texto))
+                self.assertEqual(ejecutor.call_args.args[1], params)
+                self.assertTrue(almacen.caducado(self.r, listado))
+            # El lugar no está entre los listados cargados en estos tests: basta con que se ejecute.
+            with mock.patch.object(escritura, "crear_lugar", return_value="Lugar L-07 creado."):
+                a = acciones.resolver(acciones.proponer(self.c, self.u, "crear_lugar", {"nombre": "Puerto"}), self.u, confirmar=True)
+            self.assertEqual(a.estado, AccionPropuesta.Estado.CONFIRMADA)
+            # Y si Webcar no lo confirma, fallida con su motivo.
+            fallo = cliente.WebcarError("Se ha enviado el alta de «Ana Peña», pero no aparece en Webcar con el NIF X1. Revísalo.")
+            with mock.patch.object(escritura, "crear_cliente", side_effect=fallo):
+                a = acciones.resolver(acciones.proponer(self.c, self.u, "crear_cliente", casos[0][1]), self.u, confirmar=True)
+            self.assertEqual(a.estado, AccionPropuesta.Estado.FALLIDA)
+            self.assertIn("no aparece en Webcar", a.resultado)
+
+    def test_altas_con_la_escritura_cerrada_no_llaman_a_webcar(self):
+        self.r.oper_webcar, self.r.password_webcar = "046", "secreta"
+        self.r.save()
+        # El interruptor está abierto, pero solo para anular_reserva.
+        with self.settings(**self.ESCRITURA_ABIERTA), mock.patch.object(escritura, "urlopen") as red:
+            for tipo, params in [("crear_cliente", {"nombre": "Ana", "nif": "X1"}), ("crear_lugar", {"nombre": "Puerto"}),
+                                 ("crear_reserva", {"categoria": "C-01", "cliente": "03520", "fecha_entrega": "2026-10-20", "dias": "2"})]:
+                a = acciones.resolver(acciones.proponer(self.c, self.u, tipo, params), self.u, confirmar=True)
+                self.assertEqual(a.estado, AccionPropuesta.Estado.FALLIDA)
+                self.assertIn("Escritura desactivada", a.resultado)
+        red.assert_not_called()
+
+    def test_la_tarjeta_ensena_todo_lo_que_se_va_a_escribir(self):
+        a = acciones.proponer(self.c, self.u, "crear_lugar", {"nombre": "Puerto", "centro_stock": "K-02", "color": "3833FF"})
+        self.assertEqual(a.resumen, "Dar de alta el lugar «Puerto». Con centro stock: K-02; color: 3833FF")
+        a = acciones.proponer(self.c, self.u, "crear_cliente", {"nombre": "Ana Peña", "nif": "X1", "pais": "España"})
+        self.assertEqual(a.resumen, "Dar de alta al cliente «Ana Peña» (NIF X1). Con pais: España")
+        a = acciones.proponer(self.c, self.u, "crear_reserva", {"categoria": "C-01", "cliente": "03520", "fecha_entrega": "2026-10-20", "dias": "2"})
+        self.assertEqual(a.resumen, "Crear reserva de C-01 para «03520» con entrega el 2026-10-20 (duración: 2)")
+        with self.assertRaises(acciones.ParametrosInvalidos):
+            acciones.proponer(self.c, self.u, "crear_reserva", {"categoria": "C-01", "cliente": "03520"})
+
     def test_sin_credenciales_de_webcar_queda_fallida(self):
         with self.settings(**self.ESCRITURA_ABIERTA), mock.patch.object(escritura, "urlopen") as red:
             a = self._confirmar_anulacion()

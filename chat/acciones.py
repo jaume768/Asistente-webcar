@@ -3,11 +3,13 @@
 Cada acción declara sus parámetros (JSON Schema para el modelo), una función
 que valida y resume la propuesta, y un ejecutor que llama a Webcar.
 
-ESTADO ACTUAL: Webcar no tiene API de escritura. `anular_reserva` se ejecuta
-reproduciendo el formulario de Webcar (`webcar/escritura.py`, docs/Escritura.md)
-y solo si el `.env` abre las tres puertas de `puede_escribir`; si no, la
-propuesta queda «fallida: escritura desactivada». El resto de acciones siguen
-sin ejecutor: lanzan `AccionNoDisponible`. Ver docs/PLAN.md › Fase 3.
+ESTADO ACTUAL: Webcar no tiene API de escritura. `anular_reserva`,
+`crear_reserva` (exprés), `crear_cliente` y `crear_lugar` se ejecutan
+reproduciendo los formularios de Webcar (`webcar/escritura.py`,
+docs/Escritura.md) y solo si el `.env` abre las tres puertas de
+`puede_escribir`; si no, la propuesta queda «fallida: escritura desactivada».
+El resto de acciones siguen sin ejecutor: lanzan `AccionNoDisponible`.
+Ver docs/PLAN.md › Fase 3.
 
 Reglas que no se negocian:
 - El modelo nunca ejecuta: solo crea `AccionPropuesta` en estado pendiente.
@@ -51,6 +53,24 @@ def _anular_reserva(rentacar, params):
     return resultado
 
 
+def _crear_reserva(rentacar, params):
+    resultado = escritura.crear_reserva(escritura.SesionWebcar.de_rentacar(rentacar), params)
+    Descarga.objects.filter(rentacar=rentacar, listado="reservas").delete()
+    return resultado
+
+
+def _crear_cliente(rentacar, params):
+    resultado = escritura.crear_cliente(escritura.SesionWebcar.de_rentacar(rentacar), params)
+    Descarga.objects.filter(rentacar=rentacar, listado="clientes").delete()
+    return resultado
+
+
+def _crear_lugar(rentacar, params):
+    resultado = escritura.crear_lugar(escritura.SesionWebcar.de_rentacar(rentacar), params)
+    Descarga.objects.filter(rentacar=rentacar, listado="lugares").delete()
+    return resultado
+
+
 @dataclass(frozen=True)
 class TipoAccion:
     clave: str
@@ -67,13 +87,24 @@ def _req(params, *claves):
 
 
 def _resumen_crear_reserva(p):
-    _req(p, "categoria", "fecha_entrega", "fecha_devolucion", "cliente")
-    return (
-        f"Crear reserva de {p['categoria']} para «{p['cliente']}» "
-        f"del {p['fecha_entrega']} {p.get('hora_entrega', '')} "
-        f"al {p['fecha_devolucion']} {p.get('hora_devolucion', '')}"
-        + (f", entrega en {p['lugar_entrega']}" if p.get("lugar_entrega") else "")
-    ).strip()
+    _req(p, "categoria", "cliente", "fecha_entrega", "dias")
+    return f"Crear reserva de {p['categoria']} para «{p['cliente']}» con entrega el {p['fecha_entrega']} (duración: {p['dias']})"
+
+
+def _detalle(p, ya_dichos):
+    """El resto de datos que se van a escribir: quien confirma tiene que verlos todos."""
+    resto = [f"{clave.replace('_', ' ')}: {valor}" for clave, valor in p.items() if clave not in ya_dichos and valor not in (None, "")]
+    return f". Con {'; '.join(resto)}" if resto else ""
+
+
+def _resumen_crear_cliente(p):
+    _req(p, "nombre", "nif")
+    return f"Dar de alta al cliente «{p['nombre']}» (NIF {p['nif']})" + _detalle(p, {"nombre", "nif"})
+
+
+def _resumen_crear_lugar(p):
+    _req(p, "nombre")
+    return f"Dar de alta el lugar «{p['nombre']}»" + _detalle(p, {"nombre"})
 
 
 def _resumen_anular(p):
@@ -97,29 +128,69 @@ def _resumen_inmovilizar(p):
 
 
 _FECHA = {"type": "string", "description": "AAAA-MM-DD"}
-_HORA = {"type": "string", "description": "HH:MM"}
 
 TIPOS = {
     t.clave: t
     for t in [
         TipoAccion(
             "crear_reserva",
-            "Crear una reserva nueva.",
+            "Crear una reserva exprés: solo categoría, cliente, fecha de entrega y duración. "
+            "Horas, lugares, vehículo y extras quedan con los valores por defecto de Webcar.",
             {
                 "type": "object",
                 "properties": {
                     "categoria": {"type": "string", "description": "Código C-xx de la categoría"},
-                    "cliente": {"type": "string", "description": "Código de cliente existente o nombre del nuevo"},
-                    "fecha_entrega": _FECHA, "hora_entrega": _HORA,
-                    "fecha_devolucion": _FECHA, "hora_devolucion": _HORA,
-                    "lugar_entrega": {"type": "string", "description": "Código L-xx"},
-                    "lugar_devolucion": {"type": "string", "description": "Código L-xx"},
-                    "extras": {"type": "array", "items": {"type": "string"}, "description": "Códigos Z-xxx"},
-                    "anotaciones": {"type": "string"},
+                    "cliente": {
+                        "type": "string",
+                        "description": "Código del cliente con sus cinco cifras (03527). Si es nuevo, dalo de alta antes con crear_cliente",
+                    },
+                    "fecha_entrega": _FECHA,
+                    "dias": {"type": "string", "description": "Días de alquiler, de 1 a 30"},
                 },
-                "required": ["categoria", "cliente", "fecha_entrega", "fecha_devolucion"],
+                "required": ["categoria", "cliente", "fecha_entrega", "dias"],
             },
             _resumen_crear_reserva,
+            _crear_reserva,
+        ),
+        TipoAccion(
+            "crear_cliente",
+            "Dar de alta un cliente.",
+            {
+                "type": "object",
+                "properties": {
+                    "nombre": {"type": "string", "maxLength": 60}, "nif": {"type": "string", "maxLength": 15},
+                    "domicilio": {"type": "string", "maxLength": 60}, "cp": {"type": "string", "maxLength": 10},
+                    "municipio": {"type": "string", "maxLength": 50}, "pais": {"type": "string", "maxLength": 60},
+                    "telefono": {"type": "string", "maxLength": 20}, "whatsapp": {"type": "string", "maxLength": 20},
+                    "email": {"type": "string", "maxLength": 65}, "fecha_nacimiento": _FECHA,
+                    "licencia": {"type": "string", "maxLength": 30},
+                    "fecha_expedicion": _FECHA, "fecha_caducidad": _FECHA,
+                    "oficina": {"type": "string", "description": "Código O-xx"},
+                    "tarifa": {"type": "string", "description": "Código T-xx"},
+                    "anotaciones": {"type": "string", "maxLength": 150},
+                },
+                "required": ["nombre", "nif"],
+            },
+            _resumen_crear_cliente,
+            _crear_cliente,
+        ),
+        TipoAccion(
+            "crear_lugar",
+            "Dar de alta un lugar de entrega/devolución.",
+            {
+                "type": "object",
+                "properties": {
+                    "nombre": {"type": "string", "maxLength": 50},
+                    "centro_stock": {"type": "string", "description": "Código K-xx"},
+                    "calculo_precios": {"type": "string", "description": "12 o 24 (horas)"},
+                    "dias_minimo": {"type": "string", "maxLength": 5},
+                    "color": {"type": "string", "description": "Hexadecimal de seis cifras, sin #"},
+                    "tarifa": {"type": "string", "description": "Código T-xx"},
+                },
+                "required": ["nombre"],
+            },
+            _resumen_crear_lugar,
+            _crear_lugar,
         ),
         TipoAccion(
             "anular_reserva", "Anular una reserva existente.",

@@ -10,8 +10,9 @@ car de COR SOFT). Hace tres cosas:
 1. Resuelve **dudas de uso** de Webcar Lite con la base de conocimiento (`conocimiento/`).
 2. Responde **preguntas sobre los datos** del rentacar del usuario con SQL de solo lectura sobre DuckDB.
 3. **Propone cambios** en Webcar que el usuario confirma con un botón. Webcar no
-   tiene API de escritura: hoy solo se ejecuta `anular_reserva`, reproduciendo el
-   formulario de Webcar, y solo si el `.env` lo permite (ver Fase 3 y docs/Escritura.md).
+   tiene API de escritura: se ejecutan `anular_reserva`, `crear_cliente`,
+   `crear_lugar` y `crear_reserva` (exprés) reproduciendo los formularios de
+   Webcar, y solo si el `.env` lo permite (ver Fase 3 y docs/Escritura.md).
 
 Es un proyecto aparte de `saasia` (generacion.corsoft.es), pero reutiliza su
 conocimiento de Webcar: limpieza de los CSV, relaciones entre listados, código
@@ -27,13 +28,14 @@ webcar/      conector a Webcar
   esquema.py      LISTADOS: tabla ↔ fichero de la API, caducidad, relaciones y avisos
   almacen.py      DuckDB por rentacar (DATOS_DIR/<codigo>/webcar.duckdb), tipos, consultar()
   sql_guard.py    solo un SELECT, solo tablas conocidas, sin read_csv ni similares, LIMIT
-  escritura.py    escritura por formularios: SesionWebcar (login, get_form, enviar), puede_escribir, anular_reserva
+  escritura.py    escritura por formularios: SesionWebcar (login, leer, get_form, enviar), puede_escribir,
+                  anular_reserva, crear_cliente, crear_lugar, crear_reserva
   tests_datos/    páginas grabadas de la DEMO para los tests de escritura (sin token ni contraseña)
   management/commands/refrescar_webcar.py
 chat/
   agente.py       bucle tool-calling (chat completions, OpenAI o compatible)
   herramientas.py describir_tablas, consultar_datos, refrescar_listado, buscar_ayuda, proponer_accion
-  acciones.py     tipos de acción, proponer() y resolver(); ejecutor real solo en anular_reserva
+  acciones.py     tipos de acción, proponer() y resolver(); con ejecutor: anular_reserva y las tres altas
   ayuda.py        búsqueda por palabras en conocimiento/*.md
   models.py       Conversacion, Mensaje (historial tal cual va a la API), AccionPropuesta
   views.py        UI (Django templates + JS sin framework) y endpoints JSON (mensaje, borrar, resolver_accion)
@@ -95,6 +97,10 @@ prueba con un cliente falso en `chat/tests.py`).
   si al volver a leer Webcar el cambio está hecho. El formulario se reenvía entero,
   igual que el navegador: no «simplificar» el lector de formularios sin comparar con
   un navegador real. Ni la contraseña ni el token `c` van a logs o mensajes.
+  Antes de enviar se valida contra el propio formulario (`maxlength`, valores de
+  los desplegables). El resumen de la tarjeta enseña todo lo que se va a escribir.
+  No fiarse de la respuesta de un POST ni del buscador de Webcar para confirmar:
+  se vuelve a leer el registro y se compara con lo pedido.
   Los tests usan páginas grabadas; ninguno se conecta a Webcar.
 - **Cifras solo de consultas**: el prompt lo exige; no relajarlo.
 - Columnas de Webcar engañosas: en reservas, `pais_cliente`, `nif_cliente`, etc.
