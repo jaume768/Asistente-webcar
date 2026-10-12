@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% load static %}
+{% block head %}
+{% include "chat/_estilos.html" %}
+<script src="{% static 'chat/marked.min.js' %}"></script>
+<script src="{% static 'chat/purify.min.js' %}"></script>
+{% endblock %}
+{% block content %}
+<div class="layout">
+  {% include "chat/_lateral.html" %}
+  <section class="chat">
+    <div id="mensajes"></div>
+    <form class="entrada" id="form">
+      <textarea id="texto" placeholder="Escribe tu pregunta… (Enter para enviar, Mayús+Enter salto de línea)" autofocus></textarea>
+      <button id="enviar">Enviar</button>
+    </form>
+  </section>
+</div>
+{{ mensajes_json|json_script:"datos-mensajes" }}
+{{ acciones_json|json_script:"datos-acciones" }}
+<script>
+const URL_MENSAJE = "{% url 'chat:mensaje' conversacion.pk %}";
+const CSRF = "{{ csrf_token }}";
+const caja = document.getElementById("mensajes");
+const acciones = new Map();
+
+function escapar(t) { const d = document.createElement("div"); d.textContent = t || ""; return d.innerHTML; }
+// Si el CDN no carga, se enseña el texto plano (escapado) en vez de romper la página.
+function md(texto) {
+  if (window.marked && window.DOMPurify) return DOMPurify.sanitize(marked.parse(texto || ""));
+  return "<div style='white-space:pre-wrap'>" + escapar(texto) + "</div>";
+}
+
+function pintarMensaje(m) {
+  if (m.rol === "tool") return;
+  if (m.rol === "assistant" && m.tool_calls && !m.contenido) {
+    const t = document.createElement("div");
+    t.className = "traza";
+    t.textContent = "⚙ " + m.tool_calls.map(c => c.function.name).join(", ");
+    caja.appendChild(t);
+    return;
+  }
+  const d = document.createElement("div");
+  d.className = "msg " + m.rol;
+  if (m.rol === "user") d.textContent = m.contenido; else d.innerHTML = md(m.contenido);
+  caja.appendChild(d);
+}
+
+function pintarAccion(a) {
+  let d = document.getElementById("accion-" + a.id);
+  if (!d) { d = document.createElement("div"); d.id = "accion-" + a.id; caja.appendChild(d); }
+  d.className = "accion " + a.estado;
+  d.innerHTML = "";
+  const e = document.createElement("div"); e.className = "estado"; e.textContent = "Cambio propuesto · " + a.estado; d.appendChild(e);
+  const r = document.createElement("div"); r.textContent = a.resumen; d.appendChild(r);
+  if (a.resultado) { const s = document.createElement("div"); s.className = "traza"; s.textContent = a.resultado; d.appendChild(s); }
+  if (a.estado === "pendiente") {
+    const b = document.createElement("div"); b.className = "botones";
+    for (const [dec, txt, cls] of [["confirmar", "Confirmar", ""], ["rechazar", "Rechazar", "peligro"]]) {
+      const bt = document.createElement("button"); bt.textContent = txt; if (cls) bt.className = cls;
+      bt.onclick = () => resolver(a.id, dec); b.appendChild(bt);
+    }
+    d.appendChild(b);
+  }
+  acciones.set(a.id, a);
+}
+
+async function resolver(id, decision) {
+  const r = await fetch(`/accion/${id}/${decision}/`, {method: "POST", headers: {"X-CSRFToken": CSRF}});
+  const j = await r.json();
+  if (j.error) alert(j.error); else pintarAccion(j);
+}
+
+function abajo() { caja.scrollTop = caja.scrollHeight; }
+
+JSON.parse(document.getElementById("datos-mensajes").textContent).forEach(pintarMensaje);
+JSON.parse(document.getElementById("datos-acciones").textContent).reverse().forEach(pintarAccion);
+abajo();
+
+const form = document.getElementById("form"), texto = document.getElementById("texto"), boton = document.getElementById("enviar");
+texto.addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); form.requestSubmit(); } });
+form.addEventListener("submit", async e => {
+  e.preventDefault();
+  const t = texto.value.trim(); if (!t) return;
+  texto.value = ""; boton.disabled = true;
+  pintarMensaje({rol: "user", contenido: t});
+  const p = document.createElement("div"); p.className = "pensando"; p.textContent = "Pensando…"; caja.appendChild(p); abajo();
+  try {
+    const r = await fetch(URL_MENSAJE, {method: "POST", headers: {"Content-Type": "application/json", "X-CSRFToken": CSRF}, body: JSON.stringify({texto: t})});
+    const j = await r.json();
+    p.remove();
+    if (j.error) { pintarMensaje({rol: "assistant", contenido: "⚠️ " + j.error}); }
+    else {
+      j.mensajes.filter(m => m.rol !== "user").forEach(pintarMensaje);
+      j.acciones.forEach(a => { const prev = acciones.get(a.id); if (!prev || prev.estado !== a.estado) pintarAccion(a); });
+    }
+  } catch (err) { p.remove(); pintarMensaje({rol: "assistant", contenido: "⚠️ Error de conexión."}); }
+  boton.disabled = false; texto.focus(); abajo();
+});
+</script>
+{% endblock %}

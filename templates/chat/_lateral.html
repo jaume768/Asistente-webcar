@@ -1,0 +1,8 @@
+<aside class="lateral">
+  <form method="post" action="{% url 'chat:nueva' %}">{% csrf_token %}<button style="width:100%">+ Nueva conversación</button></form>
+  <nav>
+    {% for c in conversaciones %}
+      <a href="{% url 'chat:conversacion' c.pk %}" class="{% if conversacion and c.pk == conversacion.pk %}activa{% endif %}">{{ c }}</a>
+    {% empty %}<p style="color:var(--suave)">Aún no hay conversaciones.</p>{% endfor %}
+  </nav>
+</aside>

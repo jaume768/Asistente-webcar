@@ -1,0 +1,25 @@
+<style>
+  .layout { display:grid; grid-template-columns:260px 1fr; height:calc(100vh - 53px); }
+  .lateral { border-right:1px solid var(--borde); background:var(--panel); padding:14px; overflow:auto; }
+  .lateral nav { display:grid; gap:2px; margin-top:12px; }
+  .lateral nav a { padding:7px 10px; border-radius:6px; text-decoration:none; color:var(--texto); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .lateral nav a.activa, .lateral nav a:hover { background:var(--acento-claro); }
+  .chat { display:flex; flex-direction:column; min-width:0; }
+  .chat.vacio { padding:40px; max-width:640px; }
+  #mensajes { flex:1; overflow:auto; padding:20px; display:flex; flex-direction:column; gap:12px; }
+  .msg { max-width:820px; padding:10px 14px; border-radius:12px; background:var(--panel); border:1px solid var(--borde); overflow-x:auto; }
+  .msg.user { align-self:flex-end; background:var(--acento); color:#fff; border:0; white-space:pre-wrap; }
+  .msg table { border-collapse:collapse; font-size:14px; }
+  .msg th, .msg td { border:1px solid var(--borde); padding:4px 8px; text-align:left; }
+  .msg p:first-child { margin-top:0 } .msg p:last-child { margin-bottom:0 }
+  .traza { font-size:12px; color:var(--suave); }
+  .accion { max-width:820px; border:2px solid var(--rosa); border-radius:12px; padding:12px 14px; background:#fff5fa; }
+  .accion .estado { font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:var(--suave); }
+  .accion .botones { display:flex; gap:8px; margin-top:8px; }
+  .accion.confirmada { border-color:var(--ok); background:#ecfdf5; }
+  .accion.rechazada, .accion.fallida { border-color:var(--borde); background:var(--panel); }
+  form.entrada { display:flex; gap:8px; padding:14px 20px; border-top:1px solid var(--borde); background:var(--panel); }
+  form.entrada textarea { flex:1; resize:none; font:inherit; padding:10px; border:1px solid var(--borde); border-radius:8px; height:48px; }
+  .pensando { color:var(--suave); font-style:italic; }
+  @media (max-width:760px) { .layout { grid-template-columns:1fr; } .lateral { display:none; } }
+</style>

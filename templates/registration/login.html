@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block content %}
+<main style="max-width:360px;margin-top:10vh">
+  <h1 style="color:var(--acento)">Asistente Webcar</h1>
+  <form method="post" style="display:grid;gap:12px">
+    {% csrf_token %}
+    {% if form.errors %}<p style="color:var(--error)">Usuario o contraseña incorrectos.</p>{% endif %}
+    <label>Usuario<br><input name="username" required autofocus style="width:100%;padding:8px"></label>
+    <label>Contraseña<br><input name="password" type="password" required style="width:100%;padding:8px"></label>
+    <button>Entrar</button>
+  </form>
+</main>
+{% endblock %}

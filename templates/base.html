@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Asistente Webcar{% endblock %}</title>
+  <style>
+    :root { --fondo:#f6f7f9; --panel:#fff; --texto:#1f2a37; --suave:#6b7280; --borde:#e5e7eb;
+            --acento:#2c577c; --acento-claro:#e8f0f7; --rosa:#f9369b; --ok:#0f7b6c; --error:#b42318; }
+    * { box-sizing: border-box; }
+    body { margin:0; font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; background:var(--fondo); color:var(--texto); }
+    a { color:var(--acento); }
+    header { display:flex; align-items:center; gap:16px; padding:10px 20px; background:var(--panel); border-bottom:1px solid var(--borde); }
+    header .marca { font-weight:600; color:var(--acento); }
+    header .sp { flex:1; }
+    header form { margin:0; }
+    button, .btn { font:inherit; border:0; border-radius:8px; padding:8px 14px; cursor:pointer; background:var(--acento); color:#fff; text-decoration:none; }
+    button.sec { background:var(--acento-claro); color:var(--acento); }
+    button.peligro { background:#fde8e8; color:var(--error); }
+    main { max-width:1100px; margin:0 auto; padding:20px; }
+  </style>
+  {% block head %}{% endblock %}
+</head>
+<body>
+  {% if user.is_authenticated %}
+  <header>
+    <span class="marca">Asistente Webcar</span>
+    <span>{{ user.rentacar.nombre|default:"(sin rentacar)" }}</span>
+    <span class="sp"></span>
+    <span style="color:var(--suave)">{{ user.get_full_name|default:user.username }}</span>
+    <form method="post" action="{% url 'logout' %}">{% csrf_token %}<button class="sec">Salir</button></form>
+  </header>
+  {% endif %}
+  {% block content %}{% endblock %}
+</body>
+</html>

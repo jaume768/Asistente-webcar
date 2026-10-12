@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block head %}{% include "chat/_estilos.html" %}{% endblock %}
+{% block content %}
+<div class="layout">
+  {% include "chat/_lateral.html" %}
+  <section class="chat vacio">
+    <h2>¿En qué te ayudo?</h2>
+    <p>Pregunta cómo se hace algo en Webcar Lite, pide datos de tu empresa o pide un cambio (lo tendrás que confirmar).</p>
+    <ul>
+      <li>¿Qué coches salen mañana y desde qué lugar?</li>
+      <li>¿Cuánto hay pendiente de cobro este mes?</li>
+      <li>¿Cómo inmovilizo un coche que va a la ITV?</li>
+    </ul>
+    <form method="post" action="{% url 'chat:nueva' %}">{% csrf_token %}<button>Empezar</button></form>
+  </section>
+</div>
+{% endblock %}

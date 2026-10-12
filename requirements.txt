@@ -1,0 +1,8 @@
+Django>=5.0,<5.2
+python-decouple>=3.8
+duckdb>=1.4,<2
+sqlglot>=26,<27
+openai>=1.50
+gunicorn>=22.0
+# Producción con MySQL (como saasia): descomentar
+# mysqlclient>=2.2,<2.3
