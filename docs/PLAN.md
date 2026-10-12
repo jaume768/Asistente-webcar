@@ -39,7 +39,8 @@ Pasos:
 - [ ] Cada endpoint: token por rentacar, idempotencia (id de la propuesta), respuesta con el id creado.
 
 ### Fase 4 – Producción
-- [ ] Docker + gunicorn, MySQL/Postgres, HTTPS (como saasia).
+- [x] Docker + gunicorn (un worker con hilos, WhiteNoise, SQLite/DuckDB en volumen).
+- [ ] MySQL/Postgres y HTTPS con proxy delante (como saasia).
 - [ ] Límite de mensajes/coste por usuario y día; mostrar tokens en admin.
 - [ ] Respuesta en streaming (SSE) para no esperar con «Pensando…».
 - [ ] Widget embebible en Webcar Lite (iframe con login por token).

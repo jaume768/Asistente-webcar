@@ -4,6 +4,7 @@ import logging
 from django.contrib.auth.decorators import login_required
 from django.http import Http404, HttpResponseBadRequest, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from . import acciones, agente
@@ -22,6 +23,17 @@ def _conversacion(request, pk):
     return get_object_or_404(Conversacion, pk=pk, usuario=request.user)
 
 
+def _grupos(usuario):
+    """Conversaciones del lateral por antigüedad: [(etiqueta, [conversaciones])]."""
+    hoy = timezone.localdate()
+    grupos = {}
+    for c in Conversacion.objects.filter(usuario=usuario)[:50]:
+        dias = (hoy - timezone.localtime(c.actualizada).date()).days
+        etiqueta = "Hoy" if dias <= 0 else "Ayer" if dias == 1 else "Últimos 7 días" if dias <= 7 else "Anteriores"
+        grupos.setdefault(etiqueta, []).append(c)
+    return list(grupos.items())
+
+
 def _accion_json(a):
     return {"id": str(a.id), "tipo": a.tipo, "resumen": a.resumen, "estado": a.estado, "resultado": a.resultado}
 
@@ -33,8 +45,7 @@ def _mensaje_json(m):
 
 @login_required
 def inicio(request):
-    conversaciones = Conversacion.objects.filter(usuario=request.user)[:50]
-    return render(request, "chat/inicio.html", {"conversaciones": conversaciones})
+    return render(request, "chat/inicio.html", {"grupos": _grupos(request.user)})
 
 
 @login_required
@@ -47,13 +58,24 @@ def nueva(request):
 @login_required
 def conversacion(request, pk):
     c = _conversacion(request, pk)
-    mensajes = [m for m in c.mensajes.all() if m.rol != Mensaje.Rol.HERRAMIENTA and (m.contenido or m.rol == "user")]
+    mensajes = [
+        m for m in c.mensajes.all()
+        if m.rol != Mensaje.Rol.HERRAMIENTA and (m.contenido or m.tool_calls or m.rol == "user")
+    ]
     return render(request, "chat/conversacion.html", {
         "conversacion": c,
-        "conversaciones": Conversacion.objects.filter(usuario=request.user)[:50],
+        "grupos": _grupos(request.user),
         "mensajes_json": [_mensaje_json(m) for m in mensajes],
         "acciones_json": [_accion_json(a) for a in c.acciones.all()],
     })
+
+
+@login_required
+@require_POST
+def borrar(request, pk):
+    # Se lleva por CASCADE sus mensajes y sus acciones propuestas.
+    _conversacion(request, pk).delete()
+    return JsonResponse({"ok": True})
 
 
 @login_required

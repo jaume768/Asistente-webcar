@@ -1,0 +1,19 @@
+services:
+  web:
+    build: .
+    image: webcar-asistente
+    env_file: .env
+    environment:
+      # Rutas dentro del contenedor (mandan sobre las del .env). Con MySQL,
+      # DB_NAME sale del .env; sin él, SQLite en el volumen.
+      DATOS_DIR: /datos/webcar
+      DB_NAME: ${DB_NAME:-/datos/db.sqlite3}
+    volumes:
+      - datos:/datos
+    ports:
+      # Solo desde esta máquina. Para publicarlo, poner un proxy con HTTPS delante.
+      - "127.0.0.1:8000:8000"
+    restart: unless-stopped
+
+volumes:
+  datos:

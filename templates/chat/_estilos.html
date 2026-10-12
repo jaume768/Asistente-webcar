@@ -1,25 +1,129 @@
 <style>
-  .layout { display:grid; grid-template-columns:260px 1fr; height:calc(100vh - 53px); }
-  .lateral { border-right:1px solid var(--borde); background:var(--panel); padding:14px; overflow:auto; }
-  .lateral nav { display:grid; gap:2px; margin-top:12px; }
-  .lateral nav a { padding:7px 10px; border-radius:6px; text-decoration:none; color:var(--texto); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .lateral nav a.activa, .lateral nav a:hover { background:var(--acento-claro); }
-  .chat { display:flex; flex-direction:column; min-width:0; }
-  .chat.vacio { padding:40px; max-width:640px; }
-  #mensajes { flex:1; overflow:auto; padding:20px; display:flex; flex-direction:column; gap:12px; }
-  .msg { max-width:820px; padding:10px 14px; border-radius:12px; background:var(--panel); border:1px solid var(--borde); overflow-x:auto; }
-  .msg.user { align-self:flex-end; background:var(--acento); color:#fff; border:0; white-space:pre-wrap; }
-  .msg table { border-collapse:collapse; font-size:14px; }
-  .msg th, .msg td { border:1px solid var(--borde); padding:4px 8px; text-align:left; }
-  .msg p:first-child { margin-top:0 } .msg p:last-child { margin-bottom:0 }
-  .traza { font-size:12px; color:var(--suave); }
-  .accion { max-width:820px; border:2px solid var(--rosa); border-radius:12px; padding:12px 14px; background:#fff5fa; }
+  .layout { display:flex; height:100vh; height:100dvh; }
+
+  /* Lateral: marca, nueva conversación, historial y pie con usuario, tema y salir */
+  .lateral { flex:none; width:260px; display:flex; flex-direction:column; background:var(--lateral); border-right:1px solid var(--borde); }
+  body.sin-lateral .lateral { display:none; }
+  .lateral-cab { display:flex; align-items:center; justify-content:space-between; padding:10px 8px 2px 16px; }
+  .marca { font-weight:600; color:var(--texto); text-decoration:none; }
+  .nueva { display:flex; align-items:center; gap:10px; margin:8px 10px; padding:10px 12px; border-radius:10px; color:var(--texto); text-decoration:none; }
+  .nueva:hover { background:var(--hover); }
+  .lateral nav { flex:1; overflow-y:auto; padding:0 10px 10px; }
+  .lateral nav h3 { margin:18px 12px 6px; font-size:12px; font-weight:600; color:var(--suave); }
+  .lateral nav .vacio { margin:14px 10px; font-size:14px; color:var(--suave); }
+  .item { display:flex; align-items:center; margin:2px 0; border-radius:10px; }
+  .item:hover, .item.activa { background:var(--hover); }
+  .item a { flex:1; min-width:0; padding:9px 12px; font-size:14px; color:var(--texto); text-decoration:none;
+            white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .item .borrar { visibility:hidden; margin-right:2px; }
+  .item:hover .borrar, .item:focus-within .borrar { visibility:visible; }
+  .item .borrar:hover { color:var(--error); }
+  @media (hover:none) { .item .borrar { visibility:visible; } }
+  .lateral-pie { display:flex; align-items:center; gap:2px; padding:10px 8px 10px 16px; border-top:1px solid var(--borde); }
+  .lateral-pie form { margin:0; display:flex; }
+  .quien { flex:1; min-width:0; display:flex; flex-direction:column; line-height:1.3; }
+  .quien strong, .quien span { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .quien strong { font-size:14px; }
+  .quien span { font-size:12px; color:var(--suave); }
+  .velo { display:none; }
+
+  /* Zona de chat: barra, hilo centrado y caja de entrada */
+  .chat { flex:1; min-width:0; display:flex; flex-direction:column; }
+  .barra { flex:none; display:flex; align-items:center; gap:4px; height:48px; padding:0 10px; }
+  .barra [data-lateral] { display:none; }
+  body.sin-lateral .barra [data-lateral] { display:inline-grid; }
+  .barra .titulo { padding:0 6px; font-size:14px; color:var(--suave); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  #mensajes { flex:1; overflow-y:auto; padding:24px 32px 40px; container-type:inline-size; }
+  .hilo { max-width:768px; margin:0 auto; display:flex; flex-direction:column; gap:28px; }
+  .hilo:empty::before { content:"¿En qué te ayudo?"; margin:22vh auto 0; font-size:26px; font-weight:600; }
+
+  .msg.user { align-self:flex-end; max-width:80%; padding:12px 18px; border-radius:20px; background:var(--burbuja);
+              white-space:pre-wrap; overflow-wrap:anywhere; }
+  .msg.assistant { min-width:0; }
+  .md { line-height:1.65; overflow-wrap:anywhere; }
+  .md > :first-child { margin-top:0; }
+  .md > :last-child { margin-bottom:0; }
+  .md p, .md ul, .md ol { margin:.9em 0; }
+  .md ul, .md ol { padding-left:1.5em; }
+  .md li { margin:.35em 0; }
+  .md h1, .md h2, .md h3, .md h4 { margin:1.1em 0 .4em; font-size:1.1em; line-height:1.3; }
+  .md h1 { font-size:1.25em; }
+  .md code { padding:.1em .35em; border-radius:5px; background:var(--codigo); font-size:.92em; }
+  .md pre { padding:12px 14px; border-radius:10px; background:var(--codigo); overflow-x:auto; }
+  .md pre code { padding:0; background:none; }
+  .md hr { border:0; border-top:1px solid var(--borde); margin:1em 0; }
+  /* Tablas: tan anchas como su contenido. Si no caben en la columna de texto se salen de ella, centradas,
+     hasta el ancho del panel (100cqw); a partir de ahí se desplazan en horizontal. */
+  .tabla { position:relative; left:50%; transform:translateX(-50%); width:max-content; min-width:100%; max-width:100%;
+           max-width:min(1400px, 100cqw); margin:1.2em 0; border:1px solid var(--borde); border-radius:12px;
+           overflow-x:auto; scrollbar-width:thin; }
+  .tabla:focus-visible { outline:2px solid var(--acento); outline-offset:2px; }
+  .tabla table { width:100%; border-collapse:collapse; font-size:14px; line-height:1.5; }
+  .tabla th, .tabla td { padding:10px 16px; border-bottom:1px solid var(--borde); white-space:nowrap; overflow-wrap:normal; }
+  .tabla td.larga { min-width:280px; white-space:normal; }
+  .tabla th { background:var(--burbuja); font-weight:600; }
+  .tabla th:not([align]) { text-align:left; }
+  .tabla tr:last-child td { border-bottom:0; }
+  .copiar { margin:4px 0 0 -8px; }
+  .error { color:var(--error); }
+
+  .traza { font-size:13px; color:var(--suave); }
+  .traza summary { display:inline-flex; align-items:center; gap:6px; cursor:pointer; list-style:none; }
+  .traza summary::-webkit-details-marker { display:none; }
+  .traza summary::before { content:"›"; font-size:16px; line-height:1; transition:transform .15s; }
+  .traza[open] summary::before { transform:rotate(90deg); }
+  .traza ul { margin:6px 0 0; padding-left:26px; }
+
+  .pensando { display:flex; gap:5px; padding:8px 0; }
+  .pensando span { width:7px; height:7px; border-radius:50%; background:var(--suave); animation:pensando 1.2s infinite ease-in-out; }
+  .pensando span:nth-child(2) { animation-delay:.15s; }
+  .pensando span:nth-child(3) { animation-delay:.3s; }
+  @keyframes pensando { 0%, 60%, 100% { opacity:.25; transform:none; } 30% { opacity:1; transform:translateY(-3px); } }
+  @media (prefers-reduced-motion:reduce) { .pensando span { animation:none; opacity:.6; } }
+
+  .accion { border:2px solid var(--rosa); border-radius:14px; padding:12px 16px; background:var(--rosa-fondo); }
   .accion .estado { font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:var(--suave); }
-  .accion .botones { display:flex; gap:8px; margin-top:8px; }
-  .accion.confirmada { border-color:var(--ok); background:#ecfdf5; }
+  .accion .resultado { font-size:13px; color:var(--suave); }
+  .accion .botones { display:flex; gap:8px; margin-top:10px; }
+  .accion.confirmada { border-color:var(--ok); background:var(--ok-fondo); }
   .accion.rechazada, .accion.fallida { border-color:var(--borde); background:var(--panel); }
-  form.entrada { display:flex; gap:8px; padding:14px 20px; border-top:1px solid var(--borde); background:var(--panel); }
-  form.entrada textarea { flex:1; resize:none; font:inherit; padding:10px; border:1px solid var(--borde); border-radius:8px; height:48px; }
-  .pensando { color:var(--suave); font-style:italic; }
-  @media (max-width:760px) { .layout { grid-template-columns:1fr; } .lateral { display:none; } }
+
+  .entrada { flex:none; padding:0 32px 16px; }
+  .caja { max-width:768px; margin:0 auto; display:flex; align-items:flex-end; gap:8px; padding:8px 8px 8px 18px;
+          border:1px solid var(--borde); border-radius:26px; background:var(--panel); box-shadow:var(--sombra); }
+  .caja:focus-within { border-color:var(--suave); }
+  .caja textarea { flex:1; min-width:0; max-height:200px; padding:7px 0; border:0; outline:0; resize:none; background:none;
+                   color:inherit; font:inherit; line-height:1.5; }
+  .enviar { flex:none; display:grid; place-items:center; width:36px; height:36px; padding:0; border:0; border-radius:50%;
+            background:var(--acento); color:var(--sobre-acento); cursor:pointer; }
+  .enviar:disabled { opacity:.35; cursor:default; }
+  .nota { max-width:768px; margin:8px auto 0; text-align:center; font-size:12px; color:var(--suave); }
+
+  /* Pantalla de inicio: saludo y caja en el centro */
+  .bienvenida { flex:1; display:flex; flex-direction:column; justify-content:center; padding-bottom:12vh; }
+  .bienvenida h1 { margin:0 0 24px; text-align:center; font-size:28px; font-weight:600; }
+  .bienvenida .aviso { max-width:520px; margin:0 auto; padding:0 20px; text-align:center; color:var(--suave); }
+  .sugerencias { max-width:768px; margin:4px auto 0; padding:0 20px; display:flex; flex-wrap:wrap; justify-content:center; gap:8px; }
+  .chip { padding:7px 14px; border:1px solid var(--borde); border-radius:999px; background:none; color:var(--texto);
+          font:inherit; font-size:14px; cursor:pointer; }
+  .chip:hover { background:var(--hover); }
+
+  .dialogo { width:calc(100% - 32px); max-width:420px; padding:22px; border:1px solid var(--borde); border-radius:16px;
+             background:var(--panel); color:var(--texto); }
+  .dialogo::backdrop { background:rgba(0,0,0,.45); }
+  .dialogo h2 { margin:0 0 8px; font-size:18px; }
+  .dialogo p { margin:0 0 18px; color:var(--suave); overflow-wrap:anywhere; }
+  .dialogo .botones { display:flex; justify-content:flex-end; gap:8px; }
+
+  @media (max-width:760px) {
+    .lateral, body.sin-lateral .lateral { display:flex; position:fixed; inset:0 auto 0 0; z-index:20; width:min(300px, 85vw);
+                                          transform:translateX(-100%); transition:transform .2s; }
+    body.lateral-abierto .lateral { transform:none; }
+    body.lateral-abierto .velo { display:block; position:fixed; inset:0; z-index:15; background:rgba(0,0,0,.4); }
+    .barra [data-lateral] { display:inline-grid; }
+    #mensajes { padding:12px 16px 28px; }
+    .entrada { padding:0 12px 12px; }
+    .msg.user { max-width:90%; }
+    .bienvenida h1 { font-size:24px; }
+  }
 </style>

@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% load static %}
+{% block title %}{{ conversacion }} · Asistente Webcar{% endblock %}
 {% block head %}
 {% include "chat/_estilos.html" %}
 <script src="{% static 'chat/marked.min.js' %}"></script>
@@ -9,11 +10,14 @@
 <div class="layout">
   {% include "chat/_lateral.html" %}
   <section class="chat">
-    <div id="mensajes"></div>
-    <form class="entrada" id="form">
-      <textarea id="texto" placeholder="Escribe tu pregunta… (Enter para enviar, Mayús+Enter salto de línea)" autofocus></textarea>
-      <button id="enviar">Enviar</button>
-    </form>
+    <div class="barra">
+      <button type="button" class="icono" data-lateral title="Mostrar el panel" aria-label="Mostrar el panel">
+        <svg class="i" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16"/></svg>
+      </button>
+      <span class="titulo" id="titulo">{{ conversacion }}</span>
+    </div>
+    <div id="mensajes"><div class="hilo" id="hilo"></div></div>
+    {% include "chat/_entrada.html" with nota=True %}
   </section>
 </div>
 {{ mensajes_json|json_script:"datos-mensajes" }}
@@ -21,43 +25,101 @@
 <script>
 const URL_MENSAJE = "{% url 'chat:mensaje' conversacion.pk %}";
 const CSRF = "{{ csrf_token }}";
-const caja = document.getElementById("mensajes");
+const caja = document.getElementById("mensajes"), hilo = document.getElementById("hilo");
 const acciones = new Map();
+const PASOS = {
+  describir_tablas: "Revisando las tablas",
+  consultar_datos: "Consultando los datos",
+  refrescar_listado: "Actualizando los datos de Webcar",
+  buscar_ayuda: "Buscando en la ayuda",
+  proponer_accion: "Preparando una propuesta de cambio",
+};
+const ICONO_COPIAR = '<svg class="i" viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>';
+const ICONO_HECHO = '<svg class="i" viewBox="0 0 24 24"><path d="M5 12l5 5L20 7"/></svg>';
+let traza = null;  // pasos seguidos del asistente, plegados en un solo bloque
 
 function escapar(t) { const d = document.createElement("div"); d.textContent = t || ""; return d.innerHTML; }
-// Si el CDN no carga, se enseña el texto plano (escapado) en vez de romper la página.
+// Si marked o DOMPurify no cargan, se enseña el texto plano (escapado) en vez de romper la página.
 function md(texto) {
   if (window.marked && window.DOMPurify) return DOMPurify.sanitize(marked.parse(texto || ""));
   return "<div style='white-space:pre-wrap'>" + escapar(texto) + "</div>";
 }
 
+function pintarPasos(m) {
+  if (!traza) {
+    traza = document.createElement("details");
+    traza.className = "traza";
+    traza.append(document.createElement("summary"), document.createElement("ul"));
+    hilo.appendChild(traza);
+  }
+  const lista = traza.querySelector("ul");
+  for (const c of m.tool_calls) {
+    const li = document.createElement("li");
+    li.textContent = PASOS[c.function.name] || c.function.name;
+    lista.appendChild(li);
+  }
+  const n = lista.children.length;
+  traza.querySelector("summary").textContent = n === 1 ? lista.firstChild.textContent : n + " pasos";
+}
+
+function botonCopiar(textoMd) {
+  const b = document.createElement("button");
+  b.type = "button"; b.className = "icono copiar"; b.title = "Copiar"; b.setAttribute("aria-label", "Copiar la respuesta");
+  b.innerHTML = ICONO_COPIAR;
+  b.onclick = async () => {
+    try { await navigator.clipboard.writeText(textoMd); } catch (e) { return; }
+    b.innerHTML = ICONO_HECHO;
+    setTimeout(() => { b.innerHTML = ICONO_COPIAR; }, 1500);
+  };
+  return b;
+}
+
 function pintarMensaje(m) {
   if (m.rol === "tool") return;
-  if (m.rol === "assistant" && m.tool_calls && !m.contenido) {
-    const t = document.createElement("div");
-    t.className = "traza";
-    t.textContent = "⚙ " + m.tool_calls.map(c => c.function.name).join(", ");
-    caja.appendChild(t);
-    return;
-  }
+  if (m.rol === "assistant" && m.tool_calls && !m.contenido) { pintarPasos(m); return; }
+  traza = null;
   const d = document.createElement("div");
   d.className = "msg " + m.rol;
-  if (m.rol === "user") d.textContent = m.contenido; else d.innerHTML = md(m.contenido);
-  caja.appendChild(d);
+  if (m.rol === "user") d.textContent = m.contenido;
+  else {
+    const c = document.createElement("div");
+    c.className = "md";
+    c.innerHTML = md(m.contenido);
+    // Cada tabla va en un marco que se desplaza en horizontal (con el foco, también con las flechas).
+    // Las celdas no parten líneas, salvo las de texto largo.
+    c.querySelectorAll("table").forEach(t => {
+      const w = document.createElement("div");
+      w.className = "tabla"; w.tabIndex = 0;
+      t.replaceWith(w); w.appendChild(t);
+      t.querySelectorAll("td").forEach(td => { if (td.textContent.length > 40) td.classList.add("larga"); });
+    });
+    d.appendChild(c);
+    if (navigator.clipboard) d.appendChild(botonCopiar(m.contenido));
+  }
+  hilo.appendChild(d);
+}
+
+function pintarError(mensaje) {
+  traza = null;
+  const d = document.createElement("div");
+  d.className = "msg assistant error";
+  d.textContent = "⚠️ " + mensaje;
+  hilo.appendChild(d);
 }
 
 function pintarAccion(a) {
+  traza = null;
   let d = document.getElementById("accion-" + a.id);
-  if (!d) { d = document.createElement("div"); d.id = "accion-" + a.id; caja.appendChild(d); }
+  if (!d) { d = document.createElement("div"); d.id = "accion-" + a.id; hilo.appendChild(d); }
   d.className = "accion " + a.estado;
   d.innerHTML = "";
   const e = document.createElement("div"); e.className = "estado"; e.textContent = "Cambio propuesto · " + a.estado; d.appendChild(e);
   const r = document.createElement("div"); r.textContent = a.resumen; d.appendChild(r);
-  if (a.resultado) { const s = document.createElement("div"); s.className = "traza"; s.textContent = a.resultado; d.appendChild(s); }
+  if (a.resultado) { const s = document.createElement("div"); s.className = "resultado"; s.textContent = a.resultado; d.appendChild(s); }
   if (a.estado === "pendiente") {
     const b = document.createElement("div"); b.className = "botones";
-    for (const [dec, txt, cls] of [["confirmar", "Confirmar", ""], ["rechazar", "Rechazar", "peligro"]]) {
-      const bt = document.createElement("button"); bt.textContent = txt; if (cls) bt.className = cls;
+    for (const [dec, txt, cls] of [["confirmar", "Confirmar", "btn"], ["rechazar", "Rechazar", "btn sec"]]) {
+      const bt = document.createElement("button"); bt.type = "button"; bt.textContent = txt; bt.className = cls;
       bt.onclick = () => resolver(a.id, dec); b.appendChild(bt);
     }
     d.appendChild(b);
@@ -73,29 +135,48 @@ async function resolver(id, decision) {
 
 function abajo() { caja.scrollTop = caja.scrollHeight; }
 
-JSON.parse(document.getElementById("datos-mensajes").textContent).forEach(pintarMensaje);
-JSON.parse(document.getElementById("datos-acciones").textContent).reverse().forEach(pintarAccion);
-abajo();
-
-const form = document.getElementById("form"), texto = document.getElementById("texto"), boton = document.getElementById("enviar");
-texto.addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); form.requestSubmit(); } });
-form.addEventListener("submit", async e => {
-  e.preventDefault();
-  const t = texto.value.trim(); if (!t) return;
-  texto.value = ""; boton.disabled = true;
+async function enviar(t) {
+  ocupado = true; ajustar();
   pintarMensaje({rol: "user", contenido: t});
-  const p = document.createElement("div"); p.className = "pensando"; p.textContent = "Pensando…"; caja.appendChild(p); abajo();
+  // El primer mensaje da título a la conversación: se refleja sin recargar.
+  const enlace = document.querySelector(".item.activa a[data-sin-titulo]");
+  if (enlace) {
+    enlace.textContent = enlace.title = t.slice(0, 80);
+    enlace.removeAttribute("data-sin-titulo");
+    document.getElementById("titulo").textContent = t.slice(0, 80);
+  }
+  const p = document.createElement("div");
+  p.className = "pensando"; p.setAttribute("aria-label", "Pensando");
+  p.append(document.createElement("span"), document.createElement("span"), document.createElement("span"));
+  hilo.appendChild(p); abajo();
   try {
     const r = await fetch(URL_MENSAJE, {method: "POST", headers: {"Content-Type": "application/json", "X-CSRFToken": CSRF}, body: JSON.stringify({texto: t})});
     const j = await r.json();
     p.remove();
-    if (j.error) { pintarMensaje({rol: "assistant", contenido: "⚠️ " + j.error}); }
+    if (j.error) pintarError(j.error);
     else {
       j.mensajes.filter(m => m.rol !== "user").forEach(pintarMensaje);
       j.acciones.forEach(a => { const prev = acciones.get(a.id); if (!prev || prev.estado !== a.estado) pintarAccion(a); });
     }
-  } catch (err) { p.remove(); pintarMensaje({rol: "assistant", contenido: "⚠️ Error de conexión."}); }
-  boton.disabled = false; texto.focus(); abajo();
+  } catch (err) { p.remove(); pintarError("Error de conexión."); }
+  ocupado = false; ajustar(); texto.focus(); abajo();
+}
+
+JSON.parse(document.getElementById("datos-mensajes").textContent).forEach(pintarMensaje);
+JSON.parse(document.getElementById("datos-acciones").textContent).reverse().forEach(pintarAccion);
+abajo();
+
+form.addEventListener("submit", e => {
+  e.preventDefault();
+  const t = texto.value.trim();
+  if (!t || ocupado) return;
+  texto.value = "";
+  enviar(t);
 });
+
+// Mensaje escrito en la pantalla de inicio: se envía al llegar a la conversación recién creada.
+let pendiente = null;
+try { pendiente = sessionStorage.getItem("mensaje-pendiente"); sessionStorage.removeItem("mensaje-pendiente"); } catch (e) {}
+if (pendiente && !hilo.children.length) enviar(pendiente);
 </script>
 {% endblock %}

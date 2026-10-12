@@ -33,9 +33,9 @@ chat/
   acciones.py     tipos de acción, proponer() y resolver(); ejecutores = AccionNoDisponible
   ayuda.py        búsqueda por palabras en conocimiento/*.md
   models.py       Conversacion, Mensaje (historial tal cual va a la API), AccionPropuesta
-  views.py        UI (Django templates + JS sin framework) y endpoints JSON
+  views.py        UI (Django templates + JS sin framework) y endpoints JSON (mensaje, borrar, resolver_accion)
 conocimiento/  Markdown que usa buscar_ayuda
-templates/     base, login, chat
+templates/     base (temas claro/oscuro por variables CSS), login, chat (_lateral, _entrada, _estilos)
 docs/PLAN.md   fases, decisiones, preguntas abiertas
 ```
 
@@ -52,6 +52,19 @@ python manage.py migrate
 python manage.py createsuperuser
 python manage.py refrescar_webcar demo --crear "DEMO"   # baja los 20 listados de la demo
 python manage.py runserver
+```
+
+Con Docker (`Dockerfile` + `docker-compose.yml`): gunicorn con un solo worker e
+hilos (los locks de `almacen.py` son por proceso), estáticos con WhiteNoise, y
+SQLite + DuckDB en el volumen `datos` (`/datos`). El `.env` se pasa con
+`env_file`, no se copia a la imagen; tras cambiarlo, `docker compose up -d`.
+
+```bash
+cp .env.example .env            # poner OPENAI_API_KEY
+docker compose up -d --build    # migra al arrancar; http://localhost:8000
+docker compose exec web python manage.py createsuperuser
+docker compose exec web python manage.py refrescar_webcar demo --crear "DEMO"
+docker compose run --rm --no-deps -e DATOS_DIR=/tmp/datos web python manage.py test
 ```
 
 En /admin: crear un Usuario normal con rentacar = DEMO y rol Administrador, y

@@ -1,0 +1,27 @@
+{# Caja de mensaje. Con «accion» es un formulario normal (inicio); sin ella lo envía el JS de la conversación. #}
+<div class="entrada">
+  <form class="caja" id="form"{% if accion %} method="post" action="{{ accion }}"{% endif %}>
+    {% if accion %}{% csrf_token %}{% endif %}
+    <textarea id="texto" rows="1" placeholder="Pregunta lo que quieras" aria-label="Mensaje" autofocus></textarea>
+    <button class="enviar" id="enviar" title="Enviar" aria-label="Enviar" disabled>
+      <svg class="i" viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+    </button>
+  </form>
+  {% if nota %}<p class="nota">El asistente puede equivocarse. Comprueba los datos importantes.</p>{% endif %}
+</div>
+<script>
+const form = document.getElementById("form"), texto = document.getElementById("texto"), boton = document.getElementById("enviar");
+let ocupado = false;
+// La caja crece con el texto; el botón solo se activa si hay algo que enviar.
+function ajustar() {
+  texto.style.height = "auto";
+  texto.style.height = Math.min(texto.scrollHeight, 200) + "px";
+  texto.style.overflowY = texto.scrollHeight > 200 ? "auto" : "hidden";
+  boton.disabled = ocupado || !texto.value.trim();
+}
+texto.addEventListener("input", ajustar);
+texto.addEventListener("keydown", e => {
+  if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); if (!boton.disabled) form.requestSubmit(); }
+});
+ajustar();
+</script>

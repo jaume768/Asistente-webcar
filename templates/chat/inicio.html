@@ -3,15 +3,33 @@
 {% block content %}
 <div class="layout">
   {% include "chat/_lateral.html" %}
-  <section class="chat vacio">
-    <h2>¿En qué te ayudo?</h2>
-    <p>Pregunta cómo se hace algo en Webcar Lite, pide datos de tu empresa o pide un cambio (lo tendrás que confirmar).</p>
-    <ul>
-      <li>¿Qué coches salen mañana y desde qué lugar?</li>
-      <li>¿Cuánto hay pendiente de cobro este mes?</li>
-      <li>¿Cómo inmovilizo un coche que va a la ITV?</li>
-    </ul>
-    <form method="post" action="{% url 'chat:nueva' %}">{% csrf_token %}<button>Empezar</button></form>
+  <section class="chat">
+    <div class="barra">
+      <button type="button" class="icono" data-lateral title="Mostrar el panel" aria-label="Mostrar el panel">
+        <svg class="i" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16"/></svg>
+      </button>
+    </div>
+    <div class="bienvenida">
+      <h1>¿En qué te ayudo?</h1>
+      {% if user.rentacar %}
+      {% url 'chat:nueva' as url_nueva %}
+      {% include "chat/_entrada.html" with accion=url_nueva %}
+      <div class="sugerencias">
+        <button type="button" class="chip">¿Qué coches salen mañana y desde qué lugar?</button>
+        <button type="button" class="chip">¿Cuánto hay pendiente de cobro este mes?</button>
+        <button type="button" class="chip">¿Cómo inmovilizo un coche que va a la ITV?</button>
+      </div>
+      <script>
+      // La conversación se crea al enviar; el mensaje viaja en sessionStorage y lo manda la página de la conversación.
+      form.addEventListener("submit", () => { try { sessionStorage.setItem("mensaje-pendiente", texto.value.trim()); } catch (e) {} });
+      document.querySelectorAll(".chip").forEach(c => c.addEventListener("click", () => {
+        texto.value = c.textContent; ajustar(); form.requestSubmit();
+      }));
+      </script>
+      {% else %}
+      <p class="aviso">Tu usuario no tiene rentacar asignado. Pide a un administrador que te lo asigne en /admin › Usuarios.</p>
+      {% endif %}
+    </div>
   </section>
 </div>
 {% endblock %}

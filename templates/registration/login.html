@@ -1,13 +1,30 @@
 {% extends "base.html" %}
+{% block head %}
+<style>
+  .acceso { min-height:100%; display:grid; place-items:center; padding:20px; }
+  .acceso form { width:100%; max-width:360px; display:grid; gap:14px; padding:28px; border:1px solid var(--borde); border-radius:18px;
+                 background:var(--panel); box-shadow:var(--sombra); }
+  .acceso h1 { margin:0 0 6px; font-size:22px; text-align:center; }
+  .acceso label { display:grid; gap:4px; font-size:14px; color:var(--suave); }
+  .acceso input { font:inherit; padding:10px 12px; border:1px solid var(--borde); border-radius:10px; background:var(--fondo); color:var(--texto); }
+  .acceso .fallo { margin:0; color:var(--error); font-size:14px; }
+  .acceso .btn { padding:10px 16px; }
+  .tema { position:fixed; top:12px; right:12px; }
+</style>
+{% endblock %}
 {% block content %}
-<main style="max-width:360px;margin-top:10vh">
-  <h1 style="color:var(--acento)">Asistente Webcar</h1>
-  <form method="post" style="display:grid;gap:12px">
+<button type="button" class="icono tema" onclick="cambiarTema()" title="Cambiar tema claro/oscuro" aria-label="Cambiar tema claro/oscuro">
+  <svg class="i i-luna" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+  <svg class="i i-sol" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+</button>
+<main class="acceso">
+  <form method="post">
     {% csrf_token %}
-    {% if form.errors %}<p style="color:var(--error)">Usuario o contraseña incorrectos.</p>{% endif %}
-    <label>Usuario<br><input name="username" required autofocus style="width:100%;padding:8px"></label>
-    <label>Contraseña<br><input name="password" type="password" required style="width:100%;padding:8px"></label>
-    <button>Entrar</button>
+    <h1>Asistente Webcar</h1>
+    {% if form.errors %}<p class="fallo">Usuario o contraseña incorrectos.</p>{% endif %}
+    <label>Usuario<input name="username" required autofocus autocomplete="username"></label>
+    <label>Contraseña<input name="password" type="password" required autocomplete="current-password"></label>
+    <button class="btn">Entrar</button>
   </form>
 </main>
 {% endblock %}

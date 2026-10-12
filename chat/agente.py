@@ -87,10 +87,14 @@ def responder(conversacion, usuario, texto, client=None):
         mensajes = [{"role": "system", "content": prompt_sistema(usuario, rentacar)}]
         mensajes += [m.para_api() for m in historial]
 
+        extra = {}
+        if settings.OPENAI_REASONING_EFFORT:
+            extra["reasoning_effort"] = settings.OPENAI_REASONING_EFFORT
         resp = client.chat.completions.create(
             model=settings.OPENAI_MODEL,
             messages=mensajes,
             tools=herramientas.DEFINICIONES,
+            **extra,
         )
         eleccion = resp.choices[0].message
         uso = getattr(resp, "usage", None)

@@ -2,6 +2,9 @@ import json
 import tempfile
 from pathlib import Path
 from types import SimpleNamespace
+from unittest import mock
+
+import duckdb
 
 from django.test import TestCase, override_settings
 from django.urls import reverse
@@ -65,6 +68,22 @@ class HerramientasTests(Base):
         rel = {r["columna"]: r["tabla"] for r in res["reservas"]["relaciones"]}
         self.assertEqual(rel["cliente"], "clientes")
         self.assertEqual(res["reservas"]["clave"], "codigo_reservas")
+
+    def test_describir_sigue_si_un_listado_no_carga(self):
+        vehic = "CODIGO VEHICULOS;Matr&iacutecula\r0013;1234ABC\r".encode("latin-1")
+        conectar = duckdb.connect
+
+        def falla_al_escribir(*args, **kwargs):
+            if not kwargs.get("read_only"):
+                raise duckdb.InvalidInputException("CSV Error on Line: 2\n0013;1234ABC")
+            return conectar(*args, **kwargs)
+
+        with mock.patch.object(cliente, "descargar", return_value=(vehic, "latin-1")):
+            with mock.patch.object(almacen.duckdb, "connect", falla_al_escribir):
+                res = herramientas.describir_tablas(self.ctx, ["vehiculos", "categorias"])
+        self.assertIn("vehiculos", res["vehiculos"]["error"])
+        self.assertNotIn("1234ABC", json.dumps(res))
+        self.assertEqual(res["categorias"]["clave"], "codigo_categorias")
 
     def test_ayuda(self):
         res = ayuda.buscar("cómo inmovilizo un coche para la ITV")
@@ -131,3 +150,29 @@ class VistasTests(Base):
         self.client.force_login(self.u)
         r = self.client.get(reverse("chat:conversacion", args=[self.c.pk]))
         self.assertEqual(r.status_code, 200)
+
+    def test_borrar_conversacion(self):
+        Mensaje.objects.create(conversacion=self.c, rol="user", contenido="hola")
+        acciones.proponer(self.c, self.u, "anular_reserva", {"reserva": "004286", "motivo": "cliente"})
+        self.client.force_login(self.u)
+        self.assertEqual(self.client.get(reverse("chat:borrar", args=[self.c.pk])).status_code, 405)
+        r = self.client.post(reverse("chat:borrar", args=[self.c.pk]))
+        self.assertEqual(r.status_code, 200)
+        self.assertFalse(Conversacion.objects.filter(pk=self.c.pk).exists())
+        self.assertFalse(Mensaje.objects.exists())
+        self.assertFalse(AccionPropuesta.objects.exists())
+
+    def test_no_se_borra_la_de_otro(self):
+        otro = Usuario.objects.create_user("eve", password="x", rentacar=self.r)
+        self.client.force_login(otro)
+        r = self.client.post(reverse("chat:borrar", args=[self.c.pk]))
+        self.assertEqual(r.status_code, 404)
+        self.assertTrue(Conversacion.objects.filter(pk=self.c.pk).exists())
+
+    def test_inicio_y_lateral(self):
+        self.c.titulo = "Coches de mañana"
+        self.c.save()
+        self.client.force_login(self.u)
+        r = self.client.get(reverse("chat:inicio"))
+        self.assertContains(r, "Coches de mañana")
+        self.assertContains(r, reverse("chat:borrar", args=[self.c.pk]))

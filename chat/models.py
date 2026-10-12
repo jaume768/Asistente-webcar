@@ -2,6 +2,7 @@ import uuid
 
 from django.conf import settings
 from django.db import models
+from django.utils import timezone
 
 
 class Conversacion(models.Model):
@@ -16,7 +17,7 @@ class Conversacion(models.Model):
         ordering = ["-actualizada"]
 
     def __str__(self):
-        return self.titulo or f"Conversación {self.creada:%d-%m-%Y %H:%M}"
+        return self.titulo or f"Conversación {timezone.localtime(self.creada):%d-%m-%Y %H:%M}"
 
 
 class Mensaje(models.Model):

@@ -18,4 +18,14 @@ python manage.py refrescar_webcar demo --crear "DEMO"
 python manage.py runserver
 ```
 
+Con Docker (SQLite y DuckDB quedan en el volumen `datos`):
+
+```bash
+cp .env.example .env            # poner OPENAI_API_KEY
+docker compose up -d --build    # migra al arrancar; http://localhost:8000
+docker compose exec web python manage.py createsuperuser
+docker compose exec web python manage.py refrescar_webcar demo --crear "DEMO"
+docker compose run --rm --no-deps -e DATOS_DIR=/tmp/datos web python manage.py test
+```
+
 Crea en /admin un usuario con rentacar «DEMO» y entra en http://localhost:8000.

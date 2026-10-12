@@ -29,6 +29,8 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    # Sirve los estáticos con gunicorn (en Docker no hay runserver ni nginx).
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -105,8 +107,11 @@ OPENAI_API_KEY = config("OPENAI_API_KEY", default="")
 OPENAI_BASE_URL = config("OPENAI_BASE_URL", default=None)
 OPENAI_MODEL = config("OPENAI_MODEL", default="gpt-4.1-mini")
 OPENAI_TIMEOUT_SECONDS = config("OPENAI_TIMEOUT_SECONDS", default=120, cast=int)
+# Esfuerzo de razonamiento (none, low…). Vacío = no se envía. Los gpt-6 solo
+# aceptan herramientas en chat completions con «none».
+OPENAI_REASONING_EFFORT = config("OPENAI_REASONING_EFFORT", default="")
 # Vueltas máximas del bucle del agente (llamada al modelo → herramientas → …).
-AGENTE_MAX_PASOS = config("AGENTE_MAX_PASOS", default=8, cast=int)
+AGENTE_MAX_PASOS = config("AGENTE_MAX_PASOS", default=15, cast=int)
 # Filas máximas que una consulta devuelve al modelo.
 AGENTE_MAX_FILAS = config("AGENTE_MAX_FILAS", default=200, cast=int)
 

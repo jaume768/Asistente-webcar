@@ -4,33 +4,47 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Asistente Webcar{% endblock %}</title>
+  <script>
+    // Antes de pintar, para que no parpadee: el tema guardado o, si no hay, el del sistema.
+    (function () {
+      var t = null;
+      try { t = localStorage.getItem("tema"); } catch (e) {}
+      if (t !== "claro" && t !== "oscuro") t = matchMedia("(prefers-color-scheme: dark)").matches ? "oscuro" : "claro";
+      document.documentElement.dataset.tema = t;
+    })();
+    function cambiarTema() {
+      var t = document.documentElement.dataset.tema === "oscuro" ? "claro" : "oscuro";
+      document.documentElement.dataset.tema = t;
+      try { localStorage.setItem("tema", t); } catch (e) {}
+    }
+  </script>
   <style>
-    :root { --fondo:#f6f7f9; --panel:#fff; --texto:#1f2a37; --suave:#6b7280; --borde:#e5e7eb;
-            --acento:#2c577c; --acento-claro:#e8f0f7; --rosa:#f9369b; --ok:#0f7b6c; --error:#b42318; }
-    * { box-sizing: border-box; }
-    body { margin:0; font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; background:var(--fondo); color:var(--texto); }
-    a { color:var(--acento); }
-    header { display:flex; align-items:center; gap:16px; padding:10px 20px; background:var(--panel); border-bottom:1px solid var(--borde); }
-    header .marca { font-weight:600; color:var(--acento); }
-    header .sp { flex:1; }
-    header form { margin:0; }
-    button, .btn { font:inherit; border:0; border-radius:8px; padding:8px 14px; cursor:pointer; background:var(--acento); color:#fff; text-decoration:none; }
-    button.sec { background:var(--acento-claro); color:var(--acento); }
-    button.peligro { background:#fde8e8; color:var(--error); }
-    main { max-width:1100px; margin:0 auto; padding:20px; }
+    :root { color-scheme:light;
+            --fondo:#fff; --lateral:#f7f7f8; --panel:#fff; --texto:#1f2328; --suave:#6b7280; --borde:#e3e5e8;
+            --hover:#ececee; --burbuja:#f0f2f5; --codigo:#f3f4f6; --sombra:0 2px 12px rgba(0,0,0,.06);
+            --acento:#2c577c; --sobre-acento:#fff; --enlace:#2c577c;
+            --rosa:#f9369b; --rosa-fondo:#fff5fa; --ok:#0f7b6c; --ok-fondo:#ecfdf5; --error:#b42318; --peligro:#b42318; }
+    :root[data-tema="oscuro"] { color-scheme:dark;
+            --fondo:#212121; --lateral:#171717; --panel:#2a2a2a; --texto:#ececec; --suave:#a3a3ab; --borde:#3a3a3d;
+            --hover:#2f2f31; --burbuja:#303030; --codigo:#2b2b2d; --sombra:0 2px 12px rgba(0,0,0,.25);
+            --acento:#4f8fc4; --sobre-acento:#fff; --enlace:#8ec1ee;
+            --rosa:#ff6fb5; --rosa-fondo:#3a1f2c; --ok:#4fd1b5; --ok-fondo:#16332d; --error:#ff8a80; --peligro:#c0392b; }
+    * { box-sizing:border-box; }
+    html, body { height:100%; }
+    body { margin:0; font:15px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif; background:var(--fondo); color:var(--texto); }
+    a { color:var(--enlace); }
+    .btn { font:inherit; border:0; border-radius:999px; padding:8px 16px; cursor:pointer; background:var(--acento); color:var(--sobre-acento); }
+    .btn.sec { background:var(--hover); color:var(--texto); }
+    .btn.peligro { background:var(--peligro); color:#fff; }
+    .icono { display:inline-grid; place-items:center; flex:none; width:34px; height:34px; padding:0; border:0; border-radius:8px;
+             background:none; color:var(--suave); cursor:pointer; }
+    .icono:hover { background:var(--hover); color:var(--texto); }
+    svg.i { width:18px; height:18px; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+    :root[data-tema="oscuro"] .i-luna, :root:not([data-tema="oscuro"]) .i-sol { display:none; }
   </style>
   {% block head %}{% endblock %}
 </head>
 <body>
-  {% if user.is_authenticated %}
-  <header>
-    <span class="marca">Asistente Webcar</span>
-    <span>{{ user.rentacar.nombre|default:"(sin rentacar)" }}</span>
-    <span class="sp"></span>
-    <span style="color:var(--suave)">{{ user.get_full_name|default:user.username }}</span>
-    <form method="post" action="{% url 'logout' %}">{% csrf_token %}<button class="sec">Salir</button></form>
-  </header>
-  {% endif %}
   {% block content %}{% endblock %}
 </body>
 </html>

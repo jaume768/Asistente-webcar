@@ -1,5 +1,8 @@
 import tempfile
 from pathlib import Path
+from unittest import mock
+
+import duckdb
 
 from django.test import TestCase, override_settings
 
@@ -119,3 +122,18 @@ class AlmacenTests(TestCase):
     def test_cabecera_incorrecta(self):
         with self.assertRaises(cliente.WebcarError):
             almacen.cargar_listado(self.r, "vehiculos", cliente.normalizar(CATEG, "latin-1"))
+
+    def test_comillas_en_un_campo(self):
+        # Lejos del inicio: DuckDB deduce el formato de las primeras ~20.000 líneas.
+        filas = "".join(f"{n:05};Cliente {n};Calle {n};Espa\xc3\xb1a\r" for n in range(1, 21001))
+        datos = ("CODIGO CLIENTES;Nombre;Domicilio;Pa&iacutes\r" + filas + '21001;Ana Ruiz;"CALLE MAYOR 58" N 28;Italia\r').encode("latin-1")
+        self.assertEqual(almacen.cargar_listado(self.r, "clientes", cliente.normalizar(datos, "latin-1")), 21001)
+        _, filas, _ = almacen.consultar(self.r, "select domicilio from clientes where codigo_clientes = '21001'", 10)
+        self.assertEqual(filas, [('"CALLE MAYOR 58" N 28',)])
+
+    def test_error_de_duckdb_no_ensena_la_fila(self):
+        fallo = duckdb.InvalidInputException("CSV Error on Line: 3\n03520;Sophie Laurent")
+        with mock.patch.object(almacen.duckdb, "connect", side_effect=fallo):
+            with self.assertRaises(cliente.WebcarError) as ctx:
+                almacen.cargar_listado(self.r, "clientes", cliente.normalizar(CLIEN, "latin-1"))
+        self.assertNotIn("Sophie", str(ctx.exception))

@@ -109,34 +109,40 @@ def cargar_listado(rentacar, tabla, texto_csv=None):
         escritor.writerow(columnas)
         escritor.writerows(filas)
 
-    with _lock(rentacar.codigo):
-        con = duckdb.connect(str(ruta_db(rentacar.codigo)))
-        try:
-            staging = f"_staging_{tabla}"
-            con.execute(f"DROP TABLE IF EXISTS {staging}")
-            tipos_csv = "{" + ", ".join(f"'{c}': 'VARCHAR'" for c in columnas) + "}"
-            con.execute(
-                f"CREATE TABLE {staging} AS SELECT * FROM read_csv(?, delim=';', quote='\"', "
-                f"header=true, columns={tipos_csv}, nullstr='')",
-                [str(limpio)],
-            )
-            select = ", ".join(
-                c if t == "VARCHAR" else f"TRY_CAST({c} AS {t}) AS {c}"
-                for c, t in zip(columnas, tipos)
-            )
-            con.execute(f"CREATE OR REPLACE TABLE {tabla} AS SELECT {select} FROM {staging}")
-            con.execute(f"DROP TABLE {staging}")
-            # Diccionario de columnas originales para enseñárselo al modelo.
-            con.execute(
-                "CREATE TABLE IF NOT EXISTS _columnas (tabla VARCHAR, columna VARCHAR, original VARCHAR, tipo VARCHAR)"
-            )
-            con.execute("DELETE FROM _columnas WHERE tabla = ?", [tabla])
-            con.executemany(
-                "INSERT INTO _columnas VALUES (?, ?, ?, ?)",
-                [[tabla, c, o, t] for c, o, t in zip(columnas, cabecera, tipos)],
-            )
-        finally:
-            con.close()
+    try:
+        with _lock(rentacar.codigo):
+            con = duckdb.connect(str(ruta_db(rentacar.codigo)))
+            try:
+                staging = f"_staging_{tabla}"
+                con.execute(f"DROP TABLE IF EXISTS {staging}")
+                tipos_csv = "{" + ", ".join(f"'{c}': 'VARCHAR'" for c in columnas) + "}"
+                con.execute(
+                    f"CREATE TABLE {staging} AS SELECT * FROM read_csv(?, delim=';', quote='\"', escape='\"', "
+                    f"header=true, columns={tipos_csv}, nullstr='')",
+                    [str(limpio)],
+                )
+                select = ", ".join(
+                    c if t == "VARCHAR" else f"TRY_CAST({c} AS {t}) AS {c}"
+                    for c, t in zip(columnas, tipos)
+                )
+                con.execute(f"CREATE OR REPLACE TABLE {tabla} AS SELECT {select} FROM {staging}")
+                con.execute(f"DROP TABLE {staging}")
+                # Diccionario de columnas originales para enseñárselo al modelo.
+                con.execute(
+                    "CREATE TABLE IF NOT EXISTS _columnas (tabla VARCHAR, columna VARCHAR, original VARCHAR, tipo VARCHAR)"
+                )
+                con.execute("DELETE FROM _columnas WHERE tabla = ?", [tabla])
+                con.executemany(
+                    "INSERT INTO _columnas VALUES (?, ?, ?, ?)",
+                    [[tabla, c, o, t] for c, o, t in zip(columnas, cabecera, tipos)],
+                )
+            finally:
+                con.close()
+    except duckdb.Error as exc:
+        # El error de DuckDB cita la fila que falla (datos personales): se queda
+        # en el log del servidor; al agente solo le llega qué listado ha fallado.
+        log.exception("No se pudo cargar %s/%s en DuckDB", rentacar.codigo, tabla)
+        raise cliente.WebcarError(f"No se ha podido cargar el listado {tabla}: error al procesar el CSV.") from exc
 
     Descarga.objects.update_or_create(
         rentacar=rentacar,
