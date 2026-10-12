@@ -3,11 +3,11 @@
 Cada acción declara sus parámetros (JSON Schema para el modelo), una función
 que valida y resume la propuesta, y un ejecutor que llama a Webcar.
 
-ESTADO ACTUAL: Webcar solo expone los listados CSV (lectura). Ninguna acción se
-puede ejecutar todavía: los ejecutores lanzan `AccionNoDisponible` con un
-mensaje claro y la propuesta queda «fallida». En cuanto exista el endpoint de
-escritura (API5 de importar reserva u otros que se añadan), basta con
-implementar `ejecutar` en la acción correspondiente. Ver docs/PLAN.md › Fase 3.
+ESTADO ACTUAL: Webcar no tiene API de escritura. `anular_reserva` se ejecuta
+reproduciendo el formulario de Webcar (`webcar/escritura.py`, docs/Escritura.md)
+y solo si el `.env` abre las tres puertas de `puede_escribir`; si no, la
+propuesta queda «fallida: escritura desactivada». El resto de acciones siguen
+sin ejecutor: lanzan `AccionNoDisponible`. Ver docs/PLAN.md › Fase 3.
 
 Reglas que no se negocian:
 - El modelo nunca ejecuta: solo crea `AccionPropuesta` en estado pendiente.
@@ -20,6 +20,10 @@ from dataclasses import dataclass
 from typing import Callable
 
 from django.utils import timezone
+
+from webcar import escritura
+from webcar.cliente import WebcarError
+from webcar.models import Descarga
 
 from .models import AccionPropuesta
 
@@ -37,6 +41,14 @@ def _no_disponible(_rentacar, _params):
         "Webcar todavía no ofrece una API para hacer este cambio. "
         "Hazlo desde Webcar Lite; la propuesta queda registrada."
     )
+
+
+def _anular_reserva(rentacar, params):
+    resultado = escritura.anular_reserva(escritura.SesionWebcar.de_rentacar(rentacar), params)
+    # La reserva anulada desaparece del listado: la copia local caduca ya para
+    # que la siguiente pregunta no responda con datos de antes del cambio.
+    Descarga.objects.filter(rentacar=rentacar, listado="reservas").delete()
+    return resultado
 
 
 @dataclass(frozen=True)
@@ -114,6 +126,7 @@ TIPOS = {
             {"type": "object", "properties": {"reserva": {"type": "string"}, "motivo": {"type": "string"}},
              "required": ["reserva", "motivo"]},
             _resumen_anular,
+            _anular_reserva,
         ),
         TipoAccion(
             "asignar_matricula", "Asignar un vehículo concreto a una reserva.",
@@ -159,16 +172,33 @@ def resolver(accion, usuario, confirmar):
         raise PermissionError("No es tu conversación.")
     if not usuario.puede_proponer_acciones:
         raise PermissionError("Tu perfil no permite hacer cambios.")
-    accion.resuelta = timezone.now()
+    # Se reserva la propuesta antes de ejecutar: con dos confirmaciones a la vez
+    # (doble clic) solo una llega a Webcar. Una escritura no se envía dos veces.
+    ahora = timezone.now()
+    reservada = AccionPropuesta.objects.filter(
+        pk=accion.pk, estado=AccionPropuesta.Estado.PENDIENTE, resuelta__isnull=True
+    ).update(resuelta=ahora, resuelta_por=usuario)
+    if not reservada:
+        raise ValueError("Esta propuesta ya está resuelta o se está ejecutando.")
+    accion.resuelta = ahora
     accion.resuelta_por = usuario
     if not confirmar:
         accion.estado = AccionPropuesta.Estado.RECHAZADA
         accion.save()
         return accion
+    rentacar = accion.conversacion.rentacar
+    tipo = TIPOS[accion.tipo]
     try:
-        accion.resultado = TIPOS[accion.tipo].ejecutar(accion.conversacion.rentacar, accion.parametros) or "Hecho."
+        if tipo.ejecutar is _no_disponible:
+            _no_disponible(rentacar, accion.parametros)
+        if not escritura.puede_escribir(rentacar, accion.tipo):
+            raise AccionNoDisponible(
+                "Escritura desactivada para este rentacar o esta acción: no se ha cambiado nada en Webcar. "
+                "Hazlo desde Webcar Lite; la propuesta queda registrada."
+            )
+        accion.resultado = tipo.ejecutar(rentacar, accion.parametros) or "Hecho."
         accion.estado = AccionPropuesta.Estado.CONFIRMADA
-    except AccionNoDisponible as exc:
+    except (AccionNoDisponible, WebcarError) as exc:
         accion.resultado = str(exc)
         accion.estado = AccionPropuesta.Estado.FALLIDA
     except Exception as exc:  # noqa: BLE001 — cualquier fallo de Webcar se registra

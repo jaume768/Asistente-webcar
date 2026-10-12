@@ -97,6 +97,11 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 WEBCAR_API_URL = config("WEBCAR_API_URL", default="https://lite.webcar.rent/webcar/appapi")
 WEBCAR_TIMEOUT_SECONDS = config("WEBCAR_TIMEOUT_SECONDS", default=60, cast=int)
 WEBCAR_MAX_BYTES = config("WEBCAR_MAX_BYTES", default=200 * 1024 * 1024, cast=int)
+# Escritura en Webcar (docs/Escritura.md). Tres puertas; con cualquiera cerrada el
+# agente solo propone y al confirmar la acción queda «fallida: escritura desactivada».
+WEBCAR_ESCRITURA = config("WEBCAR_ESCRITURA", default="off") == "on"
+WEBCAR_ESCRITURA_RENTACARS = config("WEBCAR_ESCRITURA_RENTACARS", default="", cast=Csv())
+WEBCAR_ESCRITURA_ACCIONES = config("WEBCAR_ESCRITURA_ACCIONES", default="", cast=Csv())
 # Dónde se guardan los CSV normalizados y el .duckdb de cada rentacar.
 DATOS_DIR = Path(config("DATOS_DIR", default=str(BASE_DIR / "datos")))
 

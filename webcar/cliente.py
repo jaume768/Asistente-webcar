@@ -81,7 +81,11 @@ def descargar(fichero, codigo_rentacar):
 # --- limpieza --------------------------------------------------------------
 
 def _cp1252_o_latin1(exc):
-    return exc.object[exc.start:exc.end].decode("latin-1"), exc.end
+    """Lo que cp1252 no define se lee (y se vuelve a escribir) como latin-1, byte a byte."""
+    trozo = exc.object[exc.start:exc.end]
+    if isinstance(exc, UnicodeEncodeError):
+        return trozo.encode("latin-1", errors="replace"), exc.end
+    return trozo.decode("latin-1"), exc.end
 
 
 codecs.register_error("cp1252_o_latin1", _cp1252_o_latin1)

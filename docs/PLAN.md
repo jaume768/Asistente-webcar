@@ -1,8 +1,9 @@
 # Plan de webcar-asistente
 
-Estado a 12-10-2026: esqueleto funcional. El conector a Webcar está probado contra
-la demo (20 listados, 4.175 reservas, 3.514 clientes); las herramientas y el bucle
-del agente están probados con tests; **falta la primera prueba con un modelo real**.
+Estado a 13-10-2026: funciona en Docker y está probado con un modelo real contra
+la demo (20 listados, 4.175 reservas, 3.514 clientes). Las herramientas y el bucle
+del agente tienen tests. La Fase 3 ha empezado: `anular_reserva` ya se ejecuta en
+la DEMO; falta afinar el prompt con la batería de preguntas.
 
 ## Fases
 
@@ -11,7 +12,7 @@ del agente están probados con tests; **falta la primera prueba con un modelo re
 | 0 | Proyecto, usuarios por rentacar, conector Webcar → DuckDB, SQL seguro | Hecho |
 | 1 | Asistente de ayuda (buscar_ayuda sobre `conocimiento/`) | Hecho v1 (búsqueda por palabras) |
 | 2 | Consultas sobre datos (describir_tablas + consultar_datos) | Hecho v1, falta afinar con el modelo |
-| 3 | Acciones con confirmación | Propuesta + confirmación hechas; ejecución bloqueada por falta de API |
+| 3 | Acciones con confirmación | En curso: `anular_reserva` se ejecuta en la DEMO automatizando el formulario de Webcar (docs/Escritura.md); el resto, pendiente |
 | 4 | Producción: despliegue, límites, métricas | Pendiente |
 
 ### Fase 1 – Ayuda
@@ -32,7 +33,20 @@ COR SOFT exponga endpoints de escritura. Lo que se sabe:
 - El control de versiones menciona una **API5 «importa reserva»** (devuelve además la URL del check-in online) y APIs para el frontend (disponibilidad, precios, entregas/devoluciones entre fechas).
 - En Webcar › Varios › Configuración hay un botón **APIS** con los esquemas.
 
-Pasos:
+Mientras no haya API, camino 2 (docs/Escritura.md): reproducir los formularios
+de Webcar con la sesión de un usuario, detrás de tres interruptores del `.env`
+(`WEBCAR_ESCRITURA`, `WEBCAR_ESCRITURA_RENTACARS`, `WEBCAR_ESCRITURA_ACCIONES`).
+
+- [x] `webcar/escritura.py`: login, lectura de formularios (`segur` fresco) y envío; `puede_escribir`.
+- [x] `anular_reserva` de punta a punta en la DEMO (13-10-2026, reserva 004292): desde el chat,
+      con confirmación, comprobando en Webcar que queda inactiva y que no cambia nada más.
+- [ ] Siguiente acción (una cada vez, con su prueba de humo): `registrar_cobro` o `asignar_matricula`,
+      que usan el mismo editor `APP21`; después `crear_reserva` e `inmovilizar_vehiculo` (`APP1`).
+- [ ] El motivo de la anulación solo queda en `AccionPropuesta`; decidir si se anota también en Webcar (`histori`).
+- [ ] El `codi` de los CSV falla un par de minutos tras la medianoche: el reloj de Webcar va algo
+      atrasado y el listado llega vacío. Reintentar con el `codi` del día anterior.
+
+Camino 1 (API de COR SOFT), que sigue siendo lo deseable:
 - [ ] Conseguir la documentación de APIS y decidir qué acciones se implementan primero.
 - [ ] Implementar `ejecutar` en `chat/acciones.py` para `crear_reserva` con API5.
 - [ ] Pedir endpoints para: anular reserva, asignar matrícula, registrar cobro, inmovilizar.
@@ -56,7 +70,16 @@ Pasos:
    la pregunta lo pide. Opciones: aceptarlo y avisar en el contrato/política;
    enmascarar columnas personales en consultar_datos; o usar un proveedor con
    garantías de no retención.
-3. Prompt injection vía datos: textos libres de Webcar (anotaciones) llegan al
+3. **Credenciales de Webcar para escribir** (`Rentacar.oper_webcar` / `password_webcar`):
+   - TODO antes de cualquier rentacar real: **cifrar la contraseña** (p. ej. `cryptography.Fernet`
+     con la clave en `.env`). Hoy se guarda en claro y solo está puesta la de la DEMO.
+   - El token de sesión `c` que devuelve el login equivale a la contraseña: se ha visto el mismo
+     valor en sesiones distintas y con él solo ya se lee y se escribe. No se registra en logs ni en
+     mensajes de error, pero viaja en la URL al leer páginas (así navega Webcar). Pedir a COR SOFT
+     un token de sesión de verdad, igual que para el `codi`.
+   - La escritura se hace con UN usuario de Webcar por rentacar: en Webcar todo queda a su nombre,
+     no al de quien confirmó. Quién confirmó queda en `AccionPropuesta.resuelta_por`.
+4. Prompt injection vía datos: textos libres de Webcar (anotaciones) llegan al
    modelo. Mitigado porque el modelo no puede ejecutar nada sin confirmación
    humana; mantener esa regla.
 

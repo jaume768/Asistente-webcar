@@ -12,7 +12,7 @@ from django.urls import reverse
 from chat import acciones, agente, ayuda, herramientas
 from chat.models import AccionPropuesta, Conversacion, Mensaje
 from cuentas.models import Usuario
-from webcar import almacen, cliente
+from webcar import almacen, cliente, escritura
 from webcar.models import Rentacar
 from webcar.tests import CATEG, CLIEN, RESER
 
@@ -40,7 +40,8 @@ class ClienteFalso:
 class Base(TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        self.override = override_settings(DATOS_DIR=Path(self.tmp.name))
+        # Escritura apagada diga lo que diga el .env: ningún test puede llegar a Webcar.
+        self.override = override_settings(DATOS_DIR=Path(self.tmp.name), WEBCAR_ESCRITURA=False)
         self.override.enable()
         self.r = Rentacar.objects.create(codigo="test", nombre="Test Rent")
         for tabla, datos in [("categorias", CATEG), ("clientes", CLIEN), ("reservas", RESER)]:
@@ -115,6 +116,67 @@ class AccionesTests(Base):
         acciones.resolver(a, self.u, confirmar=False)
         with self.assertRaises(ValueError):
             acciones.resolver(a, self.u, confirmar=True)
+
+    # --- escritura en Webcar: las tres puertas y la regla de no simular éxito ---
+
+    ESCRITURA_ABIERTA = {
+        "WEBCAR_ESCRITURA": True,
+        "WEBCAR_ESCRITURA_RENTACARS": ["test"],
+        "WEBCAR_ESCRITURA_ACCIONES": ["anular_reserva"],
+    }
+
+    def _confirmar_anulacion(self):
+        a = acciones.proponer(self.c, self.u, "anular_reserva", {"reserva": "004286", "motivo": "cliente cancela"})
+        return acciones.resolver(a, self.u, confirmar=True)
+
+    def test_escritura_desactivada_no_llama_a_webcar(self):
+        self.r.oper_webcar, self.r.password_webcar = "046", "secreta"
+        self.r.save()
+        cerradas = [
+            {**self.ESCRITURA_ABIERTA, "WEBCAR_ESCRITURA": False},
+            {**self.ESCRITURA_ABIERTA, "WEBCAR_ESCRITURA_RENTACARS": ["demo"]},
+            {**self.ESCRITURA_ABIERTA, "WEBCAR_ESCRITURA_ACCIONES": ["crear_reserva"]},
+        ]
+        for puertas in cerradas:
+            with self.settings(**puertas), mock.patch.object(escritura, "urlopen") as red:
+                a = self._confirmar_anulacion()
+            self.assertEqual(a.estado, AccionPropuesta.Estado.FALLIDA)
+            self.assertIn("Escritura desactivada", a.resultado)
+            red.assert_not_called()
+
+    def test_confirmada_solo_si_webcar_confirma(self):
+        self.r.oper_webcar, self.r.password_webcar = "046", "secreta"
+        self.r.save()
+        with self.settings(**self.ESCRITURA_ABIERTA):
+            with mock.patch.object(escritura, "anular_reserva", return_value="Reserva 004286 anulada en Webcar.") as anular:
+                a = self._confirmar_anulacion()
+            self.assertEqual(a.estado, AccionPropuesta.Estado.CONFIRMADA)
+            self.assertEqual(a.resultado, "Reserva 004286 anulada en Webcar.")
+            self.assertEqual(anular.call_args.args[1], {"reserva": "004286", "motivo": "cliente cancela"})
+            self.assertEqual(anular.call_args.args[0].oper, "046")
+            # El listado de reservas se vuelve a descargar en la siguiente consulta.
+            self.assertTrue(almacen.caducado(self.r, "reservas"))
+            self.assertFalse(almacen.caducado(self.r, "clientes"))
+
+            fallo = cliente.WebcarError("Webcar no ha anulado la reserva 004286: sigue activa después de guardar.")
+            with mock.patch.object(escritura, "anular_reserva", side_effect=fallo):
+                a = self._confirmar_anulacion()
+            self.assertEqual(a.estado, AccionPropuesta.Estado.FALLIDA)
+            self.assertIn("sigue activa", a.resultado)
+
+    def test_sin_credenciales_de_webcar_queda_fallida(self):
+        with self.settings(**self.ESCRITURA_ABIERTA), mock.patch.object(escritura, "urlopen") as red:
+            a = self._confirmar_anulacion()
+        self.assertEqual(a.estado, AccionPropuesta.Estado.FALLIDA)
+        self.assertIn("usuario y contraseña de Webcar", a.resultado)
+        red.assert_not_called()
+
+    def test_acciones_sin_ejecutor_siguen_sin_ejecutarse(self):
+        with self.settings(**{**self.ESCRITURA_ABIERTA, "WEBCAR_ESCRITURA_ACCIONES": []}):
+            a = acciones.proponer(self.c, self.u, "asignar_matricula", {"reserva": "004286", "matricula": "0013"})
+            a = acciones.resolver(a, self.u, confirmar=True)
+        self.assertEqual(a.estado, AccionPropuesta.Estado.FALLIDA)
+        self.assertIn("todavía no ofrece", a.resultado)
 
 
 class AgenteTests(Base):
