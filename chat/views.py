@@ -8,15 +8,22 @@ from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from . import acciones, agente
+from webcar.models import Rentacar
+
 from .models import AccionPropuesta, Conversacion, Mensaje
 
 log = logging.getLogger(__name__)
 
 
 def _rentacar(usuario):
-    if not usuario.rentacar_id:
-        raise Http404("Tu usuario no tiene rentacar asignado (admin › Usuarios).")
-    return usuario.rentacar
+    if usuario.rentacar_id:
+        return usuario.rentacar
+    # Un operador de COR SOFT puede no tener rentacar propio: empieza en el primero.
+    if usuario.acceso_todos_rentacars:
+        r = Rentacar.objects.filter(activo=True).first()
+        if r:
+            return r
+    raise Http404("Tu usuario no tiene rentacar asignado (admin › Usuarios).")
 
 
 def _conversacion(request, pk):
@@ -35,7 +42,9 @@ def _grupos(usuario):
 
 
 def _accion_json(a):
-    return {"id": str(a.id), "tipo": a.tipo, "resumen": a.resumen, "estado": a.estado, "resultado": a.resultado}
+    rentacar = a.rentacar or a.conversacion.rentacar
+    return {"id": str(a.id), "tipo": a.tipo, "resumen": a.resumen, "estado": a.estado, "resultado": a.resultado,
+            "rentacar": rentacar.nombre}
 
 
 def _mensaje_json(m):
@@ -67,7 +76,21 @@ def conversacion(request, pk):
         "grupos": _grupos(request.user),
         "mensajes_json": [_mensaje_json(m) for m in mensajes],
         "acciones_json": [_accion_json(a) for a in c.acciones.all()],
+        # Solo un operador de COR SOFT ve el desplegable para cambiar de rentacar.
+        "rentacars": Rentacar.objects.filter(activo=True) if request.user.acceso_todos_rentacars else None,
     })
+
+
+@login_required
+@require_POST
+def cambiar_rentacar(request, pk):
+    c = _conversacion(request, pk)
+    if not request.user.acceso_todos_rentacars:
+        return JsonResponse({"error": "Sin permiso."}, status=403)
+    obj = get_object_or_404(Rentacar, codigo=request.POST.get("codigo", ""), activo=True)
+    c.rentacar = obj
+    c.save(update_fields=["rentacar"])
+    return JsonResponse({"rentacar": obj.nombre, "codigo": obj.codigo})
 
 
 @login_required
@@ -100,6 +123,7 @@ def mensaje(request, pk):
     return JsonResponse({
         "mensajes": [_mensaje_json(m) for m in nuevos],
         "acciones": [_accion_json(a) for a in c.acciones.all()],
+        "rentacar": c.rentacar.codigo,
     })
 
 

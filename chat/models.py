@@ -72,6 +72,11 @@ class AccionPropuesta(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     conversacion = models.ForeignKey(Conversacion, on_delete=models.CASCADE, related_name="acciones")
+    # El rentacar sobre el que se propuso. Un operador puede cambiar el de la
+    # conversación después: la acción se ejecuta en este, no en el activo.
+    rentacar = models.ForeignKey(
+        "webcar.Rentacar", null=True, blank=True, on_delete=models.CASCADE, related_name="acciones"
+    )
     tipo = models.CharField(max_length=40)
     parametros = models.JSONField(default=dict)
     resumen = models.TextField(help_text="Lo que se le enseña al usuario para confirmar.")

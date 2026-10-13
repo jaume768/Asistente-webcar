@@ -22,7 +22,8 @@ conocimiento de Webcar: limpieza de los CSV, relaciones entre listados, código
 
 ```
 asistente/   settings (todo por .env con python-decouple), urls
-cuentas/     Usuario (AbstractUser) con rentacar y rol (A admin, O restringido, P partner)
+cuentas/     Usuario (AbstractUser) con rentacar, rol (A admin, O restringido, P partner)
+             y acceso_todos_rentacars (operador de COR SOFT)
 webcar/      conector a Webcar
   cliente.py      URL con codi del día, descarga, normalizar() ← rarezas del CSV de Webcar
   esquema.py      LISTADOS: tabla ↔ fichero de la API, caducidad, relaciones y avisos
@@ -35,10 +36,11 @@ webcar/      conector a Webcar
 chat/
   agente.py       bucle tool-calling (chat completions, OpenAI o compatible)
   herramientas.py describir_tablas, consultar_datos, refrescar_listado, buscar_ayuda, proponer_accion
+                  y elegir_rentacar (solo operadores: definiciones(usuario))
   acciones.py     tipos de acción, proponer() y resolver(); con ejecutor: anular_reserva y las tres altas
   ayuda.py        búsqueda por palabras en conocimiento/*.md
   models.py       Conversacion, Mensaje (historial tal cual va a la API), AccionPropuesta
-  views.py        UI (Django templates + JS sin framework) y endpoints JSON (mensaje, borrar, resolver_accion)
+  views.py        UI (Django templates + JS sin framework) y endpoints JSON (mensaje, borrar, resolver_accion, cambiar_rentacar)
 conocimiento/  Markdown que usa buscar_ayuda
 templates/     base (temas claro/oscuro por variables CSS), login, chat (_lateral, _entrada, _estilos)
 docs/PLAN.md   fases, decisiones, preguntas abiertas
@@ -80,9 +82,15 @@ prueba con un cliente falso en `chat/tests.py`).
 
 ## Reglas del proyecto (no romper)
 
-- **Aislamiento por rentacar**: el rentacar sale SIEMPRE de `request.user`, nunca
-  de lo que diga el modelo ni de parámetros de la URL. Cada rentacar tiene su
-  propio fichero DuckDB.
+- **Aislamiento por rentacar**: el rentacar sale SIEMPRE de la sesión (el de
+  `request.user`, guardado en `Conversacion.rentacar`), nunca de lo que diga el
+  modelo ni de parámetros de la URL. Cada rentacar tiene su propio fichero DuckDB.
+  Única excepción: un operador de COR SOFT (`Usuario.acceso_todos_rentacars`, que
+  NO es el rol Administrador) puede cambiar el rentacar de su conversación con la
+  herramienta `elegir_rentacar` o con el desplegable (`views.cambiar_rentacar`);
+  los dos comprueban el permiso en el servidor. Ver docs/MULTICAR.MD.
+- **Una acción se ejecuta en el rentacar donde se propuso** (`AccionPropuesta.rentacar`),
+  no en el que esté activo en la conversación al confirmar.
 - **Solo lectura en datos**: todo SQL del modelo pasa por `sql_guard.validar` y se
   ejecuta con DuckDB `read_only=True` y `enable_external_access=False`. No
   añadir herramientas que ejecuten SQL sin pasar por ahí.

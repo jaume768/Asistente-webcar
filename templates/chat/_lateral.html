@@ -31,7 +31,7 @@
   <div class="lateral-pie">
     <div class="quien">
       <strong>{{ user.get_full_name|default:user.username }}</strong>
-      <span>{{ user.rentacar.nombre|default:"Sin rentacar" }}</span>
+      <span>{% if user.acceso_todos_rentacars %}Operador COR SOFT{% else %}{{ user.rentacar.nombre|default:"Sin rentacar" }}{% endif %}</span>
     </div>
     <button type="button" class="icono" onclick="cambiarTema()" title="Cambiar tema claro/oscuro" aria-label="Cambiar tema claro/oscuro">
       <svg class="i i-luna" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>

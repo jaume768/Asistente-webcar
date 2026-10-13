@@ -231,7 +231,8 @@ def proponer(conversacion, usuario, tipo, parametros):
         raise ParametrosInvalidos(f"Acción desconocida: {tipo}. Válidas: {', '.join(TIPOS)}")
     resumen = TIPOS[tipo].resumir(parametros or {})
     return AccionPropuesta.objects.create(
-        conversacion=conversacion, tipo=tipo, parametros=parametros or {}, resumen=resumen
+        conversacion=conversacion, rentacar=conversacion.rentacar, tipo=tipo,
+        parametros=parametros or {}, resumen=resumen,
     )
 
 
@@ -257,7 +258,9 @@ def resolver(accion, usuario, confirmar):
         accion.estado = AccionPropuesta.Estado.RECHAZADA
         accion.save()
         return accion
-    rentacar = accion.conversacion.rentacar
+    # El rentacar de la propuesta, no el activo ahora en la conversación (un
+    # operador puede haberlo cambiado después de proponer).
+    rentacar = accion.rentacar or accion.conversacion.rentacar
     tipo = TIPOS[accion.tipo]
     try:
         if tipo.ejecutar is _no_disponible:

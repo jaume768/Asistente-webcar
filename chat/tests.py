@@ -243,11 +243,180 @@ class AgenteTests(Base):
         # El segundo turno lleva al modelo el resultado de la herramienta.
         self.assertEqual(falso.peticiones[1]["messages"][-1]["role"], "tool")
 
+    def test_el_prompt_limita_el_ambito_a_webcar(self):
+        falso = ClienteFalso([(agente.FUERA_DE_TEMA, None)])
+        agente.responder(self.c, self.u, "¿cuál es la capital de Francia?", client=falso)
+        prompt = falso.peticiones[0]["messages"][0]["content"]
+        self.assertIn("Ámbito: solo atiendes", prompt)
+        self.assertIn(agente.FUERA_DE_TEMA, prompt)
+
     def test_limite_de_pasos(self):
         with self.settings(AGENTE_MAX_PASOS=2):
             falso = ClienteFalso([(None, [_llamada("buscar_ayuda", {"consulta": "x"}, f"c{i}")]) for i in range(2)])
             final = agente.responder(self.c, self.u, "bucle", client=falso)
         self.assertIn("No he podido terminar", final.contenido)
+
+
+class OperadorBase(Base):
+    """Un operador de COR SOFT sin rentacar propio y un segundo rentacar con otros datos."""
+
+    def setUp(self):
+        super().setUp()
+        self.otro = Rentacar.objects.create(codigo="1000", nombre="Autos Otro, S.L.")
+        # Una sola reserva de alquiler, para distinguirlo de «test» (que tiene dos).
+        una = b"\r".join(RESER.split(b"\r")[:2]) + b"\r"
+        for tabla, datos in [("categorias", CATEG), ("clientes", CLIEN), ("reservas", una)]:
+            almacen.cargar_listado(self.otro, tabla, cliente.normalizar(datos, "latin-1"))
+        self.op = Usuario.objects.create_user("corsoft", password="x", acceso_todos_rentacars=True)
+        self.c_op = Conversacion.objects.create(usuario=self.op, rentacar=self.r)
+        self.ctx_op = herramientas.Contexto(self.op, self.r, self.c_op)
+
+    def _n_reservas(self, ctx):
+        return herramientas.consultar_datos(ctx, "select count(*) from reservas")["filas"][0][0]
+
+
+class MultiRentacarTests(OperadorBase):
+    def test_usuario_normal_no_ve_ni_usa_elegir_rentacar(self):
+        nombres = [d["function"]["name"] for d in herramientas.definiciones(self.u)]
+        self.assertNotIn("elegir_rentacar", nombres)
+        res = herramientas.ejecutar(self.ctx, "elegir_rentacar", json.dumps({"rentacar": "1000"}))
+        self.assertIn("permiso", res["error"])
+        self.c.refresh_from_db()
+        self.assertEqual(self.c.rentacar, self.r)
+        self.assertEqual(self.ctx.rentacar, self.r)
+        # Ni siendo administrador de su empresa: el permiso es otro.
+        self.u.rol = Usuario.Rol.ADMIN
+        self.u.save()
+        self.assertNotIn("elegir_rentacar", [d["function"]["name"] for d in herramientas.definiciones(self.u)])
+        self.assertIn("error", herramientas.elegir_rentacar(self.ctx, "1000"))
+
+    def test_usuario_normal_no_recibe_la_herramienta_ni_la_lista(self):
+        falso = ClienteFalso([("Hola.", None)])
+        agente.responder(self.c, self.u, "hola", client=falso)
+        peticion = falso.peticiones[0]
+        self.assertNotIn("elegir_rentacar", [d["function"]["name"] for d in peticion["tools"]])
+        self.assertNotIn("Autos Otro", peticion["messages"][0]["content"])
+
+    def test_aunque_el_modelo_la_llame_un_usuario_normal_no_cambia(self):
+        falso = ClienteFalso([
+            (None, [_llamada("elegir_rentacar", {"rentacar": "1000"})]),
+            ("No puedo.", None),
+        ])
+        agente.responder(self.c, self.u, "del rentacar 1000, ¿cuántas reservas?", client=falso)
+        self.c.refresh_from_db()
+        self.assertEqual(self.c.rentacar, self.r)
+        self.assertIn("permiso", self.c.mensajes.get(rol="tool").contenido)
+
+    def test_operador_elige_por_codigo_nombre_y_substring(self):
+        for texto, esperado in [("1000", self.otro), ("test rent", self.r), ("otro", self.otro), (" TEST ", self.r)]:
+            res = herramientas.ejecutar(self.ctx_op, "elegir_rentacar", json.dumps({"rentacar": texto}))
+            self.assertEqual(res.get("codigo"), esperado.codigo, res)
+            self.assertEqual(self.ctx_op.rentacar, esperado)
+            self.c_op.refresh_from_db()
+            self.assertEqual(self.c_op.rentacar, esperado)
+
+    def test_nombre_inexistente_devuelve_la_lista(self):
+        res = herramientas.elegir_rentacar(self.ctx_op, "no existe")
+        self.assertIn("Autos Otro, S.L.", res["error"])
+        self.assertIn("Test Rent", res["error"])
+        self.assertEqual(self.ctx_op.rentacar, self.r)
+        self.assertIn("error", herramientas.elegir_rentacar(self.ctx_op, ""))
+
+    def test_nombre_ambiguo_no_elige_al_azar(self):
+        Rentacar.objects.create(codigo="1001", nombre="Autos Otro Palma")
+        res = herramientas.elegir_rentacar(self.ctx_op, "autos otro")
+        self.assertIn("varios", res["error"])
+        self.assertEqual(self.ctx_op.rentacar, self.r)
+
+    def test_rentacar_inactivo_no_se_puede_elegir(self):
+        self.otro.activo = False
+        self.otro.save()
+        self.assertIn("error", herramientas.elegir_rentacar(self.ctx_op, "1000"))
+
+    def test_tras_elegir_las_consultas_van_al_nuevo(self):
+        self.assertEqual(self._n_reservas(self.ctx_op), 3)
+        herramientas.elegir_rentacar(self.ctx_op, "1000")
+        self.assertEqual(self._n_reservas(self.ctx_op), 1)
+
+    def test_flujo_del_rentacar_x_entregas_de_manana(self):
+        falso = ClienteFalso([
+            (None, [_llamada("elegir_rentacar", {"rentacar": "Autos Otro"})]),
+            (None, [_llamada("consultar_datos", {"sql": "select count(*) from reservas"}, "c2")]),
+            ("En Autos Otro, S.L. hay 1 entrega mañana.", None),
+        ])
+        final = agente.responder(self.c_op, self.op, "del rentacar Autos Otro, ¿qué entregas hay mañana?", client=falso)
+        self.assertIn("Autos Otro", final.contenido)
+        herramientas_usadas = list(self.c_op.mensajes.filter(rol="tool").values_list("nombre_herramienta", flat=True))
+        self.assertEqual(herramientas_usadas, ["elegir_rentacar", "consultar_datos"])
+        # La consulta salió del rentacar elegido, no del inicial.
+        consulta = self.c_op.mensajes.get(rol="tool", nombre_herramienta="consultar_datos")
+        self.assertIn("[[1]]", consulta.contenido.replace(" ", ""))
+        self.c_op.refresh_from_db()
+        self.assertEqual(self.c_op.rentacar, self.otro)
+        # El operador recibe la herramienta y la lista; tras el cambio, el prompt habla del nuevo.
+        self.assertIn("elegir_rentacar", [d["function"]["name"] for d in falso.peticiones[0]["tools"]])
+        self.assertIn("la empresa «Test Rent»", falso.peticiones[0]["messages"][0]["content"])
+        self.assertIn("Autos Otro, S.L. (código 1000)", falso.peticiones[0]["messages"][0]["content"])
+        self.assertIn("la empresa «Autos Otro, S.L.»", falso.peticiones[1]["messages"][0]["content"])
+
+    def test_la_accion_se_ejecuta_en_el_rentacar_donde_se_propuso(self):
+        res = herramientas.proponer_accion(self.ctx_op, "anular_reserva", {"reserva": "004286", "motivo": "cliente"})
+        herramientas.elegir_rentacar(self.ctx_op, "1000")
+        a = AccionPropuesta.objects.get(pk=res["propuesta_id"])
+        self.assertEqual(a.rentacar, self.r)
+        with self.settings(WEBCAR_ESCRITURA=True, WEBCAR_ESCRITURA_RENTACARS=["test"], WEBCAR_ESCRITURA_ACCIONES=[]):
+            with mock.patch.object(escritura.SesionWebcar, "de_rentacar", side_effect=lambda r: r) as sesion:
+                with mock.patch.object(escritura, "anular_reserva", return_value="Anulada."):
+                    acciones.resolver(a, self.op, confirmar=True)
+        sesion.assert_called_once_with(self.r)
+
+    def test_usuario_valido_sin_rentacar_solo_si_es_operador(self):
+        self.op.full_clean()
+        self.assertTrue(self.op.puede_proponer_acciones)
+        from django.core.exceptions import ValidationError
+        with self.assertRaises(ValidationError):
+            Usuario(username="suelto", password="x").full_clean()
+
+
+class VistasMultiRentacarTests(OperadorBase):
+    def test_usuario_normal_no_puede_cambiar_de_rentacar(self):
+        self.client.force_login(self.u)
+        r = self.client.post(reverse("chat:cambiar_rentacar", args=[self.c.pk]), {"codigo": "1000"})
+        self.assertEqual(r.status_code, 403)
+        self.c.refresh_from_db()
+        self.assertEqual(self.c.rentacar, self.r)
+        self.assertNotContains(self.client.get(reverse("chat:conversacion", args=[self.c.pk])), 'id="rentacar"')
+
+    def test_operador_cambia_con_el_desplegable(self):
+        self.client.force_login(self.op)
+        url = reverse("chat:cambiar_rentacar", args=[self.c_op.pk])
+        self.assertEqual(self.client.get(url).status_code, 405)
+        r = self.client.post(url, {"codigo": "1000"})
+        self.assertEqual(r.json(), {"rentacar": "Autos Otro, S.L.", "codigo": "1000"})
+        self.c_op.refresh_from_db()
+        self.assertEqual(self.c_op.rentacar, self.otro)
+        self.assertEqual(self.client.post(url, {"codigo": "nada"}).status_code, 404)
+        pagina = self.client.get(reverse("chat:conversacion", args=[self.c_op.pk]))
+        self.assertContains(pagina, '<option value="1000" selected>')
+
+    def test_operador_no_cambia_la_conversacion_de_otro(self):
+        self.client.force_login(self.op)
+        r = self.client.post(reverse("chat:cambiar_rentacar", args=[self.c.pk]), {"codigo": "1000"})
+        self.assertEqual(r.status_code, 404)
+
+    def test_operador_sin_rentacar_abre_conversacion_y_el_resto_no(self):
+        self.client.force_login(self.op)
+        inicio = self.client.get(reverse("chat:inicio"))
+        self.assertContains(inicio, reverse("chat:nueva"))
+        self.assertNotContains(inicio, "no tiene rentacar asignado")
+        r = self.client.post(reverse("chat:nueva"))
+        self.assertEqual(r.status_code, 302)
+        nueva = Conversacion.objects.filter(usuario=self.op).exclude(pk=self.c_op.pk).get()
+        self.assertEqual(nueva.rentacar, Rentacar.objects.filter(activo=True).first())
+        suelto = Usuario.objects.create_user("suelto", password="x")
+        self.client.force_login(suelto)
+        self.assertContains(self.client.get(reverse("chat:inicio")), "no tiene rentacar asignado")
+        self.assertEqual(self.client.post(reverse("chat:nueva")).status_code, 404)
 
 
 class VistasTests(Base):

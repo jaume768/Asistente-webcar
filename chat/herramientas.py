@@ -2,7 +2,9 @@
 
 Cada herramienta recibe un `Contexto` (usuario, rentacar, conversación) que el
 modelo NO controla: el rentacar sale siempre de la sesión, nunca de los
-argumentos. Así un usuario no puede pedir datos de otro rentacar.
+argumentos. Así un usuario no puede pedir datos de otro rentacar. La única
+excepción es `elegir_rentacar`, que solo se ofrece a operadores de COR SOFT y
+comprueba el permiso en el servidor (docs/MULTICAR.MD).
 """
 
 import datetime
@@ -15,6 +17,7 @@ from django.conf import settings
 
 from webcar import almacen, esquema, sql_guard
 from webcar.cliente import WebcarError
+from webcar.models import Rentacar
 
 from . import acciones, ayuda
 
@@ -115,6 +118,34 @@ def proponer_accion(ctx, tipo, parametros, explicacion=""):
     }
 
 
+def elegir_rentacar(ctx, rentacar):
+    # Se recomprueba aquí aunque la herramienta solo se ofrezca a operadores.
+    if not getattr(ctx.usuario, "acceso_todos_rentacars", False):
+        return {"error": "No tienes permiso para cambiar de rentacar."}
+    q = str(rentacar or "").strip()
+    if not q:
+        return {"error": "Indica el nombre o el código del rentacar."}
+    qs = Rentacar.objects.filter(activo=True)
+    obj = qs.filter(codigo__iexact=q).first() or qs.filter(nombre__iexact=q).first()
+    if not obj:
+        parecidos = list(qs.filter(nombre__icontains=q)[:6])
+        if len(parecidos) > 1:
+            lista = ", ".join(f"{r.nombre} (código {r.codigo})" for r in parecidos)
+            return {"error": f"«{q}» coincide con varios rentacars: {lista}. Pregunta al usuario cuál es."}
+        obj = parecidos[0] if parecidos else None
+    if not obj:
+        disponibles = ", ".join(qs.values_list("nombre", flat=True)[:30])
+        return {"error": f"No encuentro el rentacar «{q}». Disponibles: {disponibles}"}
+    ctx.rentacar = obj  # el resto del turno va a este rentacar
+    ctx.conversacion.rentacar = obj  # y los mensajes siguientes también
+    ctx.conversacion.save(update_fields=["rentacar"])
+    return {
+        "rentacar": obj.nombre,
+        "codigo": obj.codigo,
+        "nota": "Las siguientes consultas y acciones son de este rentacar.",
+    }
+
+
 # --- definiciones para el modelo -------------------------------------------
 
 _TABLAS = list(esquema.POR_TABLA)
@@ -196,12 +227,37 @@ DEFINICIONES = [
     },
 ]
 
+_ELEGIR_RENTACAR = {
+    "type": "function",
+    "function": {
+        "name": "elegir_rentacar",
+        "description": (
+            "Cambia el rentacar sobre el que se consulta o se actúa. Úsalo cuando el usuario nombre "
+            "un rentacar (p. ej. «del rentacar X, …»). Solo operadores de COR SOFT."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {"rentacar": {"type": "string", "description": "Nombre o código del rentacar"}},
+            "required": ["rentacar"],
+        },
+    },
+}
+
+
+def definiciones(usuario):
+    """Herramientas disponibles para este usuario."""
+    if getattr(usuario, "acceso_todos_rentacars", False):
+        return DEFINICIONES + [_ELEGIR_RENTACAR]
+    return DEFINICIONES
+
+
 IMPLEMENTACIONES = {
     "describir_tablas": describir_tablas,
     "consultar_datos": consultar_datos,
     "refrescar_listado": refrescar_listado,
     "buscar_ayuda": buscar_ayuda,
     "proponer_accion": proponer_accion,
+    "elegir_rentacar": elegir_rentacar,
 }
 
 

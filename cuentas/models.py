@@ -31,11 +31,18 @@ class Usuario(AbstractUser):
         help_text="Su código U-xxx en Webcar (para filtrar sus reservas o tareas).",
     )
 
+    acceso_todos_rentacars = models.BooleanField(
+        "operador COR SOFT (ve todos los rentacars)",
+        default=False,
+        help_text="Permite consultar cualquier rentacar desde el chat. Solo para personal de COR SOFT.",
+    )
+
     def clean(self):
         super().clean()
-        if not self.is_superuser and not self.rentacar_id:
+        # Un operador de COR SOFT puede no tener rentacar propio.
+        if not self.is_superuser and not self.acceso_todos_rentacars and not self.rentacar_id:
             raise ValidationError({"rentacar": "Un usuario normal necesita un rentacar."})
 
     @property
     def puede_proponer_acciones(self):
-        return self.is_superuser or self.rol in {self.Rol.ADMIN, self.Rol.RESTRINGIDO}
+        return self.is_superuser or self.acceso_todos_rentacars or self.rol in {self.Rol.ADMIN, self.Rol.RESTRINGIDO}

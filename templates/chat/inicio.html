@@ -11,7 +11,7 @@
     </div>
     <div class="bienvenida">
       <h1>¿En qué te ayudo?</h1>
-      {% if user.rentacar %}
+      {% if user.rentacar or user.acceso_todos_rentacars %}
       {% url 'chat:nueva' as url_nueva %}
       {% include "chat/_entrada.html" with accion=url_nueva %}
       <div class="sugerencias">

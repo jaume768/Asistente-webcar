@@ -15,6 +15,13 @@
         <svg class="i" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16"/></svg>
       </button>
       <span class="titulo" id="titulo">{{ conversacion }}</span>
+      {% if rentacars %}
+      <select class="rentacar" id="rentacar" title="Rentacar de esta conversación" aria-label="Rentacar de esta conversación">
+        {% for r in rentacars %}
+        <option value="{{ r.codigo }}"{% if r.pk == conversacion.rentacar_id %} selected{% endif %}>{{ r.nombre }} ({{ r.codigo }})</option>
+        {% endfor %}
+      </select>
+      {% endif %}
     </div>
     <div id="mensajes"><div class="hilo" id="hilo"></div></div>
     {% include "chat/_entrada.html" with nota=True %}
@@ -27,12 +34,15 @@ const URL_MENSAJE = "{% url 'chat:mensaje' conversacion.pk %}";
 const CSRF = "{{ csrf_token }}";
 const caja = document.getElementById("mensajes"), hilo = document.getElementById("hilo");
 const acciones = new Map();
+// Solo existe para operadores de COR SOFT; el servidor comprueba el permiso al cambiar.
+const selRentacar = document.getElementById("rentacar");
 const PASOS = {
   describir_tablas: "Revisando las tablas",
   consultar_datos: "Consultando los datos",
   refrescar_listado: "Actualizando los datos de Webcar",
   buscar_ayuda: "Buscando en la ayuda",
   proponer_accion: "Preparando una propuesta de cambio",
+  elegir_rentacar: "Cambiando de rentacar",
 };
 const ICONO_COPIAR = '<svg class="i" viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>';
 const ICONO_HECHO = '<svg class="i" viewBox="0 0 24 24"><path d="M5 12l5 5L20 7"/></svg>';
@@ -113,7 +123,7 @@ function pintarAccion(a) {
   if (!d) { d = document.createElement("div"); d.id = "accion-" + a.id; hilo.appendChild(d); }
   d.className = "accion " + a.estado;
   d.innerHTML = "";
-  const e = document.createElement("div"); e.className = "estado"; e.textContent = "Cambio propuesto · " + a.estado; d.appendChild(e);
+  const e = document.createElement("div"); e.className = "estado"; e.textContent = "Cambio propuesto · " + a.estado + (selRentacar ? " · " + a.rentacar : ""); d.appendChild(e);
   const r = document.createElement("div"); r.textContent = a.resumen; d.appendChild(r);
   if (a.resultado) { const s = document.createElement("div"); s.className = "resultado"; s.textContent = a.resultado; d.appendChild(s); }
   if (a.estado === "pendiente") {
@@ -157,9 +167,24 @@ async function enviar(t) {
     else {
       j.mensajes.filter(m => m.rol !== "user").forEach(pintarMensaje);
       j.acciones.forEach(a => { const prev = acciones.get(a.id); if (!prev || prev.estado !== a.estado) pintarAccion(a); });
+      // El asistente puede haber cambiado de rentacar con elegir_rentacar.
+      if (selRentacar) selRentacar.value = selRentacar.dataset.actual = j.rentacar;
     }
   } catch (err) { p.remove(); pintarError("Error de conexión."); }
   ocupado = false; ajustar(); texto.focus(); abajo();
+}
+
+if (selRentacar) {
+  selRentacar.dataset.actual = selRentacar.value;
+  selRentacar.addEventListener("change", async () => {
+    let j = {error: "Error de conexión."};
+    try {
+      const r = await fetch("{% url 'chat:cambiar_rentacar' conversacion.pk %}", {method: "POST", headers: {"X-CSRFToken": CSRF}, body: new URLSearchParams({codigo: selRentacar.value})});
+      j = r.ok ? await r.json() : {error: "No se ha podido cambiar de rentacar."};
+    } catch (err) {}
+    if (j.error) { alert(j.error); selRentacar.value = selRentacar.dataset.actual; }
+    else selRentacar.dataset.actual = j.codigo;
+  });
 }
 
 JSON.parse(document.getElementById("datos-mensajes").textContent).forEach(pintarMensaje);
